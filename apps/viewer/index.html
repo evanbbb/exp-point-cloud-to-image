@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Istanbul3D Viewer</title>
+    <style>
+      :root { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+      body { margin: 24px; max-width: 980px; }
+      .row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+      input, select, button { padding: 8px; }
+      pre { background: #f4f4f4; padding: 12px; border-radius: 8px; white-space: pre-wrap; }
+      canvas { border: 1px solid #d8d8d8; border-radius: 8px; display: block; margin-bottom: 12px; }
+      .label { min-width: 100px; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <h1>Viewer (Mock Generation)</h1>
+
+    <div class="row">
+      <span class="label">Session</span>
+      <input id="sessionId" placeholder="SESSION_YYYYMMDD_HHMMSS" />
+      <button id="start">Start Generation</button>
+      <button id="poll">Poll Status</button>
+      <input id="jobId" placeholder="job id" />
+    </div>
+
+    <div class="row">
+      <button id="pickDir">Pick Session Folder</button>
+      <span id="dirState">No folder selected</span>
+    </div>
+    <div class="row">
+      <span class="label">Reference</span>
+      <input id="refFile" type="file" accept="image/png,image/jpeg" />
+      <button id="initRef">Initialize reference.png</button>
+    </div>
+
+    <canvas id="scene" width="960" height="540"></canvas>
+
+    <div class="row">
+      <span class="label">Lens</span>
+      <select id="lensPreset">
+        <option>24mm</option>
+        <option>35mm</option>
+        <option selected>50mm</option>
+        <option>85mm</option>
+      </select>
+
+      <span class="label">Dolly Z</span>
+      <input id="dolly" type="range" min="-2" max="2" step="0.01" value="0" />
+      <span id="dollyValue">0.00</span>
+
+      <button id="capture">Capture View</button>
+    </div>
+
+    <pre id="out">Ready.</pre>
+
+    <script>
+      const lensFov = {
+        '24mm': 84,
+        '35mm': 63,
+        '50mm': 47,
+        '85mm': 28
+      };
+
+      const out = document.getElementById('out');
+      const sessionId = document.getElementById('sessionId');
+      const jobId = document.getElementById('jobId');
+      const lensPreset = document.getElementById('lensPreset');
+      const dolly = document.getElementById('dolly');
+      const dollyValue = document.getElementById('dollyValue');
+      const dirState = document.getElementById('dirState');
+      const canvas = document.getElementById('scene');
+      const ctx = canvas.getContext('2d');
+
+      let sessionDirHandle = null;
+      let referenceZ = 0;
+
+      function log(value) {
+        out.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+      }
+
+      function drawMockScene() {
+        const fov = lensFov[lensPreset.value] || 47;
+        const z = Number(dolly.value);
+        const w = canvas.width;
+        const h = canvas.height;
+
+        const g = ctx.createLinearGradient(0, 0, w, h);
+        g.addColorStop(0, '#f7f0e6');
+        g.addColorStop(1, '#d8e5f0');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.fillStyle = '#1f2937';
+        ctx.font = '700 34px sans-serif';
+        ctx.fillText('Mock Splat View', 24, 48);
+
+        ctx.font = '500 18px sans-serif';
+        ctx.fillText(`Lens: ${lensPreset.value}  FOV: ${fov} deg`, 24, 82);
+        ctx.fillText(`Dolly Z: ${z.toFixed(2)} m`, 24, 108);
+        ctx.fillText(`Time: ${new Date().toISOString()}`, 24, 134);
+
+        const radius = Math.max(32, 120 - fov + z * 12);
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(w * 0.7, h * 0.55, radius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      async function getOrCreateDir(parentHandle, name) {
+        return parentHandle.getDirectoryHandle(name, { create: true });
+      }
+
+      async function writeTextFile(dirHandle, name, content) {
+        const fileHandle = await dirHandle.getFileHandle(name, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(content);
+        await writable.close();
+      }
+
+      async function writeBlobFile(dirHandle, name, blob) {
+        const fileHandle = await dirHandle.getFileHandle(name, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      }
+
+      async function fileExists(dirHandle, name) {
+        try {
+          await dirHandle.getFileHandle(name);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      async function nextCaptureName(capturesDirHandle) {
+        let max = 0;
+        for await (const [name, handle] of capturesDirHandle.entries()) {
+          if (handle.kind !== 'directory') continue;
+          const m = /^cap_(\d{4})$/.exec(name);
+          if (!m) continue;
+          const n = Number(m[1]);
+          if (n > max) max = n;
+        }
+        return `cap_${String(max + 1).padStart(4, '0')}`;
+      }
+
+      function getCameraJson() {
+        const fov = lensFov[lensPreset.value] || 47;
+        return {
+          projection: 'perspective',
+          lens_preset: lensPreset.value,
+          fov_degrees: fov,
+          aspect: canvas.width / canvas.height,
+          near: 0.01,
+          far: 1000,
+          sensor_width_mm: 36
+        };
+      }
+
+      function getDeltaPoseJson() {
+        const z = Number(dolly.value);
+        return {
+          x: 0,
+          y: 0,
+          z: Number((z - referenceZ).toFixed(4)),
+          pitch: 0,
+          yaw: 0,
+          roll: 0,
+          units: 'meters',
+          angles: 'degrees'
+        };
+      }
+
+      document.getElementById('start').onclick = async () => {
+        try {
+          const body = {
+            session_id: sessionId.value,
+            reference_image_path: `shots/${sessionId.value}/source/reference.png`,
+            force_regenerate: false
+          };
+          const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          const data = await res.json();
+          jobId.value = data.job_id || '';
+          log(data);
+        } catch (error) {
+          log({ error: String(error) });
+        }
+      };
+
+      document.getElementById('poll').onclick = async () => {
+        try {
+          const res = await fetch(`/api/generate/${jobId.value}?session_id=${encodeURIComponent(sessionId.value)}`);
+          const data = await res.json();
+          log(data);
+        } catch (error) {
+          log({ error: String(error) });
+        }
+      };
+
+      document.getElementById('pickDir').onclick = async () => {
+        try {
+          if (!window.showDirectoryPicker) {
+            throw new Error('File System Access API is not available in this browser.');
+          }
+          sessionDirHandle = await window.showDirectoryPicker();
+          dirState.textContent = `Selected: ${sessionDirHandle.name}`;
+          log('Session folder selected.');
+        } catch (error) {
+          log({ error: String(error) });
+        }
+      };
+
+      document.getElementById('initRef').onclick = async () => {
+        try {
+          if (!sessionDirHandle) {
+            throw new Error('Select a session folder first.');
+          }
+          const fileInput = document.getElementById('refFile');
+          const file = fileInput.files?.[0];
+          if (!file) {
+            throw new Error('Choose a reference image first.');
+          }
+
+          const sourceDir = await getOrCreateDir(sessionDirHandle, 'source');
+          if (await fileExists(sourceDir, 'reference.png')) {
+            log('reference.png already exists in source/. Skipping copy.');
+            return;
+          }
+
+          await writeBlobFile(sourceDir, 'reference.png', file);
+          log('reference.png copied to source/reference.png');
+        } catch (error) {
+          log({ error: String(error) });
+        }
+      };
+
+      document.getElementById('capture').onclick = async () => {
+        try {
+          if (!sessionDirHandle) {
+            throw new Error('Select a session folder first.');
+          }
+
+          const sourceDir = await getOrCreateDir(sessionDirHandle, 'source');
+          const capturesDir = await getOrCreateDir(sourceDir, 'captures');
+          const capName = await nextCaptureName(capturesDir);
+          const capDir = await getOrCreateDir(capturesDir, capName);
+
+          const targetBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+          if (!targetBlob) {
+            throw new Error('Failed to encode canvas PNG.');
+          }
+
+          await writeBlobFile(capDir, 'target.png', targetBlob);
+          await writeTextFile(capDir, 'camera.json', JSON.stringify(getCameraJson(), null, 2));
+          await writeTextFile(capDir, 'delta_pose.json', JSON.stringify(getDeltaPoseJson(), null, 2));
+
+          log({
+            message: 'Capture exported',
+            path: `source/captures/${capName}/`,
+            files: ['target.png', 'camera.json', 'delta_pose.json']
+          });
+        } catch (error) {
+          log({ error: String(error) });
+        }
+      };
+
+      lensPreset.onchange = drawMockScene;
+      dolly.oninput = () => {
+        dollyValue.textContent = Number(dolly.value).toFixed(2);
+        drawMockScene();
+      };
+
+      drawMockScene();
+    </script>
+  </body>
+</html>

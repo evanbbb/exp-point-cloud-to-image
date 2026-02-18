@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Istanbul3D Repair</title>
+    <style>
+      :root { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+      body { margin: 24px; max-width: 840px; }
+      .row { display: flex; gap: 8px; margin-bottom: 12px; }
+      input, button { padding: 8px; }
+      pre { background: #f4f4f4; padding: 12px; border-radius: 8px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Repair (Single Item)</h1>
+    <p>Use API client/Postman for now. This page is a shell for paid-confirm + single-run flow.</p>
+    <pre id="out">POST /api/repair expects multipart files: reference,target,delta_pose,camera and paid_confirm=true</pre>
+  </body>
+</html>
