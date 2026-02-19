@@ -21,7 +21,12 @@
       "Bash(python3:*)",
       "Bash(/Users/evanboehm/code/istanbul3d/.venv-mlsharp-311/bin/sharp:*)",
       "Bash(npm run build:*)",
-      "Bash(GENERATION_MODE=mock node:*)"
+      "Bash(GENERATION_MODE=mock node:*)",
+      "Bash(grep:*)",
+      "WebFetch(domain:phosphoricons.com)",
+      "Bash(xargs:*)",
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

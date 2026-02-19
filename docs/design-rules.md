@@ -7,7 +7,7 @@ Use this document when adding or changing UI so new features stay visually and s
 ## Layout
 
 - **Full screen width** — The interface uses the full width of the viewport; avoid fixed max-widths that create side margins on the main layout.
-- **Fixed left menu column** — The left navigation is a fixed-width column; it does not scroll with the main content and stays in place. **Settings** is a cog icon in the **lower left** of the menu (links to settings); main nav items are above it.
+- **Fixed left menu column** — The left navigation is a fixed-width column; it does not scroll with the main content and stays in place. **Settings** uses the Phosphor `Gear` icon in the **lower left** of the menu (links to settings); main nav items are above it.
 - **Flexible canvas area** — The main content area (canvas) sits to the right of the menu and flexes to use all remaining horizontal space. Content is laid out on an **8-column grid**.
 
 ---
@@ -52,9 +52,21 @@ Use this document when adding or changing UI so new features stay visually and s
 
 ---
 
+## Icons
+
+Use **Phosphor Icons** exclusively so icons stay consistent across all UI elements (buttons, menu, cards, panels, etc.).
+
+- **Source** — [Phosphor Icons](https://phosphoricons.com) ([GitHub](https://github.com/phosphor-icons/homepage)). 1,248+ icons; 6 weights: Thin, Light, **Regular**, Bold, Fill, Duotone.
+- **Integration** — Use the package matching your stack: `@phosphor-icons/react`, `@phosphor-icons/vue`, or `@phosphor-icons/web` (vanilla). Tree-shaking is supported; import only the icons you use.
+- **Weight** — Prefer **Regular** for most UI (menu, buttons, cards). Use **Bold** or **Fill** only when an icon needs emphasis (e.g. primary CTA). Keep weight consistent within a component type (e.g. all nav icons same weight).
+- **Size** — Icons are designed at 16×16px and scale well. Match icon size to surrounding text: 16px for body, 20px for headings. Avoid mixing icon sizes within the same control.
+- **Color** — Icons inherit text color. Use the same semantic tokens as typography: white for primary, muted grey for secondary. Accent (e.g. blue) for active/selected states.
+
+---
+
 ## Buttons and Controls
 
-- **Default / secondary buttons and filter-style controls** — Thin white outline (e.g. 1px), rounded corners, background matching the canvas (or transparent/dark). Text and icons in white or light grey.
+- **Default / secondary buttons and filter-style controls** — Thin white outline (e.g. 1px), rounded corners, background matching the canvas (or transparent/dark). Text and icons in white or light grey. Use Phosphor Icons (see Icons section).
 - **Primary action button** — Can use solid blue background, white text, rounded corners when the action is the main CTA (e.g. "Create a report").
 
 ---
@@ -82,5 +94,6 @@ When implementing a new feature, check:
 - [ ] Typography: use semantic classes (e.g. `.typography-h1`, `.typography-body`, `.typography-body-muted`, `.typography-label`); see Design page typography table for the full list. No hardcoded font sizes or text colors.
 - [ ] Main text white; secondary/muted grey (via tokens and semantic classes).
 - [ ] Inactive menu grey; hover white; active white + blue accent.
+- [ ] Icons use Phosphor Icons only; Regular weight for most UI; consistent size within each control type.
 - [ ] Buttons use thin white outlines (or solid blue for primary CTA only).
 - [ ] Cards use the same container style, title (`.typography-h3`), body/muted description (`.typography-body-muted`), and grid layout across Episodes, Characters, and Locations.

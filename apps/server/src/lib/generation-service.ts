@@ -11,8 +11,9 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-async function writeRealManifest(sessionId: string, plyAbsPath: string): Promise<string> {
-  const manifestPath = resolveWithin(config.shotsRoot, `${sessionId}/source/scene/manifest.json`);
+async function writeRealManifest(referencePath: string, plyAbsPath: string): Promise<string> {
+  const refDir = path.dirname(referencePath);
+  const manifestPath = path.join(refDir, "scene", "manifest.json");
   await fs.mkdir(path.dirname(manifestPath), { recursive: true });
   await fs.writeFile(
     manifestPath,
@@ -68,8 +69,9 @@ function runMlSharp(referencePath: string, sceneDir: string): Promise<void> {
   });
 }
 
-async function writeMockManifest(sessionId: string): Promise<string> {
-  const manifestPath = resolveWithin(config.shotsRoot, `${sessionId}/source/scene/manifest.json`);
+async function writeMockManifest(referencePath: string): Promise<string> {
+  const refDir = path.dirname(referencePath);
+  const manifestPath = path.join(refDir, "scene", "manifest.json");
   await fs.mkdir(path.dirname(manifestPath), { recursive: true });
   await fs.writeFile(
     manifestPath,
@@ -103,7 +105,8 @@ export async function startGeneration(input: unknown): Promise<{
   await fs.access(referencePath);
 
   if (!body.force_regenerate) {
-    const manifestPath = resolveWithin(config.shotsRoot, `${sessionId}/source/scene/manifest.json`);
+    const refDir = path.dirname(referencePath);
+    const manifestPath = path.join(refDir, "scene", "manifest.json");
     try {
       await fs.access(manifestPath);
       const completed = await findCompletedJob(sessionId);
@@ -150,7 +153,7 @@ export async function startGeneration(input: unknown): Promise<{
         job = { ...job, status: "running", stage: "running_ml_sharp", progress_percent: 50, updated_at: nowIso() };
         await upsertJob(sessionId, job);
 
-        const manifestPath = await writeMockManifest(sessionId);
+        const manifestPath = await writeMockManifest(referencePath);
         job = {
           ...job,
           status: "completed",
@@ -178,7 +181,8 @@ export async function startGeneration(input: unknown): Promise<{
         job = { ...job, status: "running", stage: "running_ml_sharp", progress_percent: 10, updated_at: nowIso() };
         await upsertJob(sessionId, job);
 
-        const sceneDir = resolveWithin(config.shotsRoot, `${sessionId}/source/scene`);
+        const refDir = path.dirname(referencePath);
+        const sceneDir = path.join(refDir, "scene");
         await fs.mkdir(sceneDir, { recursive: true });
 
         await runMlSharp(referencePath, sceneDir);
@@ -188,7 +192,7 @@ export async function startGeneration(input: unknown): Promise<{
 
         const refStem = path.basename(referencePath, path.extname(referencePath));
         const plyAbsPath = path.join(sceneDir, `${refStem}.ply`);
-        const manifestPath = await writeRealManifest(sessionId, plyAbsPath);
+        const manifestPath = await writeRealManifest(referencePath, plyAbsPath);
 
         job = {
           ...job,

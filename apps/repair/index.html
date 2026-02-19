@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -25,6 +26,14 @@
       body { display: flex; }
 
       /* Sidebar */
+      .sidebar-title {
+        padding: 0 24px 20px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--color-text);
+        letter-spacing: 0.05em;
+      }
+
       .sidebar {
         width: var(--sidebar-width);
         background: var(--color-menu-bg);
@@ -88,6 +97,8 @@
       .typography-h1 { font-size: 20px; font-weight: 700; color: var(--color-text); margin-bottom: 12px; }
       .typography-body-muted { font-size: 11px; color: var(--color-text-muted); line-height: 1.7; margin-bottom: 24px; }
 
+      i.ph { font-size: 16px; line-height: 1; }
+
       pre {
         background: #1e1e1e;
         border: 1px solid var(--color-border);
@@ -102,17 +113,21 @@
   </head>
   <body>
     <nav class="sidebar">
+      <div class="sidebar-title">Istanbul3D</div>
       <div class="sidebar-nav">
         <a href="/viewer">Viewer</a>
         <a href="/repair" class="active">Repair</a>
       </div>
       <div class="sidebar-footer">
-        <a href="#">⚙ Settings</a>
+        <a href="#" style="display:flex;align-items:center;gap:6px;">
+          <i class="ph ph-gear" aria-hidden="true"></i>
+          Settings
+        </a>
       </div>
     </nav>
 
     <main class="canvas-area">
-      <h1 class="typography-h1">Repair</h1>
+      <h1 class="typography-h1">Part B: Generative Repair of Captures</h1>
       <p class="typography-body-muted">
         <strong style="color:var(--color-text);">Step 2 of 2.</strong> The viewer's captures contain a target image rendered from
         a new camera angle — but the 3D splat has holes and artifacts where it had to guess.

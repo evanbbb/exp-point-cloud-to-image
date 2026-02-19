@@ -7,6 +7,15 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"
+      }
+    }
+    </script>
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -26,6 +35,14 @@
       body { display: flex; }
 
       /* Sidebar */
+      .sidebar-title {
+        padding: 0 24px 20px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--color-text);
+        letter-spacing: 0.05em;
+      }
+
       .sidebar {
         width: var(--sidebar-width);
         background: var(--color-menu-bg);
@@ -132,10 +149,21 @@
         font-family: inherit;
         font-size: 12px;
         cursor: pointer;
-        transition: border-color 0.15s;
+        transition:
+          color 150ms ease,
+          background-color 150ms ease,
+          border-color 150ms ease,
+          filter 150ms ease,
+          transform 120ms ease;
       }
 
-      button:hover { border-color: rgba(255, 255, 255, 0.5); }
+      @media (hover: hover) {
+        button:not(:disabled):hover { filter: brightness(1.08); }
+      }
+
+      button:not(:disabled):active {
+        transform: translateY(1px) scale(0.98);
+      }
 
       button.primary {
         background: var(--color-accent);
@@ -143,7 +171,9 @@
         color: #fff;
       }
 
-      button.primary:hover { opacity: 0.85; }
+      @media (prefers-reduced-motion: reduce) {
+        button { transition: none; }
+      }
 
       canvas {
         border: 1px solid var(--color-border);
@@ -179,21 +209,76 @@
 
       /* Session header in ready state */
       .session-header {
+        margin-bottom: 16px;
+      }
+
+      .session-id-row {
         display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        margin-bottom: 20px;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
       }
 
       .session-id-display {
         font-size: 11px;
         color: var(--color-text-muted);
-        margin-top: 4px;
       }
 
       .session-id-display span {
         color: var(--color-text);
         font-weight: 600;
+      }
+
+      .icon-btn {
+        padding: 4px 7px;
+        line-height: 1;
+        color: var(--color-text-muted);
+      }
+
+      @media (hover: hover) {
+        .icon-btn:not(:disabled):hover {
+          color: var(--color-text);
+          filter: none;
+        }
+      }
+
+      label.btn-file {
+        display: inline-block;
+        padding: 7px 14px;
+        background: transparent;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        transition:
+          color 150ms ease,
+          background-color 150ms ease,
+          border-color 150ms ease,
+          filter 150ms ease,
+          transform 120ms ease;
+      }
+
+      @media (hover: hover) {
+        label.btn-file:hover { filter: brightness(1.08); }
+      }
+
+      label.btn-file:active {
+        transform: translateY(1px) scale(0.98);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        label.btn-file { transition: none; }
+      }
+
+      button svg, button i { display: block; }
+      i.ph { font-size: 16px; line-height: 1; }
+
+      .session-divider {
+        border: none;
+        border-top: 1px solid var(--color-border);
+        margin: 16px 0;
       }
 
       /* Section divider */
@@ -248,16 +333,67 @@
       }
 
       .pick-landing p { max-width: 440px; }
+
+      /* Scene row: canvas + side panel */
+      .scene-row {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 12px;
+      }
+
+      .scene-row canvas {
+        margin-bottom: 0;
+        flex-shrink: 0;
+      }
+
+      .camera-panel {
+        min-width: 240px;
+        font-size: 11px;
+        color: var(--color-text-muted);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .camera-panel .section-label {
+        margin-bottom: 8px;
+      }
+
+      .pose-grid {
+        display: grid;
+        grid-template-columns: 44px 1fr;
+        row-gap: 4px;
+        column-gap: 6px;
+      }
+
+      .pose-key {
+        font-size: 11px;
+        color: var(--color-text-muted);
+        font-weight: 600;
+        align-self: center;
+      }
+
+      .pose-val {
+        font-size: 11px;
+        color: var(--color-text);
+        font-variant-numeric: tabular-nums;
+        align-self: center;
+      }
     </style>
   </head>
   <body>
     <nav class="sidebar">
+      <div class="sidebar-title">Istanbul3D</div>
       <div class="sidebar-nav">
         <a href="/viewer" class="active">Viewer</a>
         <a href="/repair">Repair</a>
       </div>
       <div class="sidebar-footer">
-        <a href="#">⚙ Settings</a>
+        <a href="#" style="display:flex;align-items:center;gap:6px;">
+          <i class="ph ph-gear" aria-hidden="true"></i>
+          Settings
+        </a>
       </div>
     </nav>
 
@@ -265,7 +401,7 @@
 
       <!-- ── State: pick ── -->
       <div id="state-pick">
-        <h1 class="typography-h1">Viewer</h1>
+        <h1 class="typography-h1">Part A: 2D Image → 3D Capture</h1>
         <div class="pick-landing">
           <p class="typography-body-muted">
             <strong style="color:var(--color-text);">Step 1 of 2.</strong>
@@ -278,7 +414,7 @@
 
       <!-- ── State: confirm new folder ── -->
       <div id="state-confirm" style="display:none">
-        <h1 class="typography-h1">Viewer</h1>
+        <h1 class="typography-h1">Part A: 2D Image → 3D Capture</h1>
         <div class="confirm-card">
           <p class="typography-body-muted">
             <strong id="confirmFolderName" style="color:var(--color-text);"></strong>
@@ -295,41 +431,85 @@
       <!-- ── State: ready ── -->
       <div id="state-ready" style="display:none">
         <div class="session-header">
-          <div>
-            <h1 class="typography-h1">Viewer</h1>
+          <h1 class="typography-h1">Part A: 2D Image → 3D Capture</h1>
+          <div class="session-id-row">
             <p class="session-id-display">Session: <span id="sessionDisplay"></span></p>
+            <button id="btnOpenFolder" class="icon-btn" title="Open session folder">
+              <i class="ph ph-folder-open" aria-hidden="true"></i>
+            </button>
+            <button id="pickDirSwitch" class="icon-btn" title="Switch folder">
+              <i class="ph ph-arrows-counter-clockwise" aria-hidden="true"></i>
+            </button>
           </div>
-          <button id="pickDirSwitch">Switch Folder</button>
         </div>
 
+        <hr class="session-divider" />
+
         <p class="typography-body-muted">
-          <strong style="color:var(--color-text);">Step 1 of 2.</strong>
           Initialize a reference photo, adjust the camera, then hit
           <em>Capture View</em> to export a target frame. Take your captures to the
           <a href="/repair" style="color:var(--color-accent);">Repair app</a> when ready.
         </p>
 
         <div class="row">
-          <span class="label">Reference</span>
-          <input id="refFile" type="file" accept="image/png,image/jpeg" />
-          <button id="initRef">Initialize reference.png</button>
+          <select id="sourceSelect"><option value="">Select image</option></select>
+          <input id="refFile" type="file" accept="image/*" style="display:none" />
+          <span id="refFileName" class="typography-label"></span>
+          <span id="refFileDims" class="typography-label" style="display:none"></span>
         </div>
 
-        <canvas id="scene" width="960" height="540"></canvas>
+        <div class="scene-row">
+          <canvas id="scene" width="960" height="540"></canvas>
+          <div id="camera-panel" class="camera-panel">
+            <div>
+              <div class="section-label">Camera</div>
+              <div class="row" style="margin-bottom:8px;">
+                <select id="activeCamera">
+                  <option value="orbit" selected>Orbit Camera</option>
+                  <option value="shot">Shot Camera</option>
+                </select>
+              </div>
+              <div id="lensRow" class="row" style="margin-bottom:8px;display:none;">
+                <span class="label" style="min-width:50px;">Lens</span>
+                <select id="lensPreset">
+                  <option>24mm</option>
+                  <option>35mm</option>
+                  <option selected>50mm</option>
+                  <option>85mm</option>
+                </select>
+              </div>
+              <button id="resetCamera" class="icon-btn" title="Reset active camera">
+                <i class="ph ph-arrows-counter-clockwise" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <div>
+              <div id="activePoseTitle" class="section-label">Orbit Camera Pose</div>
+              <div class="pose-grid">
+                <span class="pose-key">x:</span><span id="poseX" class="pose-val">0.00</span>
+                <span class="pose-key">y:</span><span id="poseY" class="pose-val">0.00</span>
+                <span class="pose-key">z:</span><span id="poseZ" class="pose-val">0.00</span>
+                <span class="pose-key">pitch:</span><span id="posePitch" class="pose-val">0.00</span>
+                <span class="pose-key">yaw:</span><span id="poseYaw" class="pose-val">0.00</span>
+                <span class="pose-key">roll:</span><span id="poseRoll" class="pose-val">0.00</span>
+              </div>
+            </div>
+
+            <div id="deltaSection" style="display:none;">
+              <div class="section-label">Delta (LoRA input)</div>
+              <div class="pose-grid">
+                <span class="pose-key">x:</span><span id="deltaX" class="pose-val">0.00</span>
+                <span class="pose-key">y:</span><span id="deltaY" class="pose-val">0.00</span>
+                <span class="pose-key">z:</span><span id="deltaZ" class="pose-val">0.00</span>
+                <span class="pose-key">pitch:</span><span id="deltaPitch" class="pose-val">0.00</span>
+                <span class="pose-key">yaw:</span><span id="deltaYaw" class="pose-val">0.00</span>
+                <span class="pose-key">roll:</span><span id="deltaRoll" class="pose-val">0.00</span>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div class="row">
-          <span class="label">Lens</span>
-          <select id="lensPreset">
-            <option>24mm</option>
-            <option>35mm</option>
-            <option selected>50mm</option>
-            <option>85mm</option>
-          </select>
-
-          <span class="label">Dolly Z</span>
-          <input id="dolly" type="range" min="-2" max="2" step="0.01" value="0" />
-          <span id="dollyValue" class="typography-label">0.00</span>
-
           <button id="capture" class="primary">Capture View</button>
         </div>
 
@@ -349,13 +529,17 @@
 
     </main>
 
-    <script>
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
       const SESSION_FILE = 'istanbul3d_session.json';
       const lensFov = { '24mm': 84, '35mm': 63, '50mm': 47, '85mm': 28 };
 
       let sessionDirHandle = null;
       let sessionData = null;
-      const referenceZ = 0;
+      const SHOT_INITIAL_POS = new THREE.Vector3(0, 1, 3);
+      const SHOT_INITIAL_ROT = new THREE.Euler();
 
       // ── UI state ──────────────────────────────────────────────
 
@@ -396,6 +580,97 @@
         await writable.close();
       }
 
+      // ── Source helpers ─────────────────────────────────────────
+
+      function getActiveSource() {
+        if (!sessionData?.sources?.length) return null;
+        return sessionData.sources.find(s => s.id === sessionData.active_source) || sessionData.sources[0];
+      }
+
+      async function nextSourceId(sourceDir) {
+        let max = 0;
+        for await (const [name, handle] of sourceDir.entries()) {
+          if (handle.kind !== 'directory') continue;
+          const m = /^src_(\d{4})$/.exec(name);
+          if (m && Number(m[1]) > max) max = Number(m[1]);
+        }
+        return `src_${String(max + 1).padStart(4, '0')}`;
+      }
+
+      function renderSourceSelect() {
+        const sel = document.getElementById('sourceSelect');
+        const nameEl = document.getElementById('refFileName');
+        const dimsEl = document.getElementById('refFileDims');
+        sel.innerHTML = '';
+        if (!sessionData?.sources?.length) {
+          sel.innerHTML = '<option value="">Select image</option>';
+        } else {
+          sessionData.sources.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = `${s.id}: ${s.filename}`;
+            if (s.id === sessionData.active_source) opt.selected = true;
+            sel.appendChild(opt);
+          });
+        }
+        // "New Image" always last
+        const newOpt = document.createElement('option');
+        newOpt.value = '__new__';
+        newOpt.textContent = '+ New Image';
+        sel.appendChild(newOpt);
+        const active = getActiveSource();
+        nameEl.textContent = active ? active.filename : '';
+        dimsEl.style.display = 'none';
+      }
+
+      async function migrateLegacySession() {
+        if (sessionData.sources || !sessionData.reference_filename) return;
+        const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
+        const srcId = 'src_0001';
+        const srcDir = await sourceDir.getDirectoryHandle(srcId, { create: true });
+        // Move reference file into src_0001/
+        try {
+          const fh = await sourceDir.getFileHandle(sessionData.reference_filename);
+          const file = await fh.getFile();
+          await writeBlobFile(srcDir, sessionData.reference_filename, file);
+          await sourceDir.removeEntry(sessionData.reference_filename);
+        } catch { /* file may not exist */ }
+        // Move captures/ into src_0001/captures/
+        try {
+          const oldCaps = await sourceDir.getDirectoryHandle('captures');
+          const newCaps = await srcDir.getDirectoryHandle('captures', { create: true });
+          for await (const [name, handle] of oldCaps.entries()) {
+            if (handle.kind === 'directory') {
+              const capDir = await newCaps.getDirectoryHandle(name, { create: true });
+              for await (const [fname, fhandle] of handle.entries()) {
+                if (fhandle.kind === 'file') {
+                  const f = await fhandle.getFile();
+                  await writeBlobFile(capDir, fname, f);
+                }
+              }
+            }
+          }
+          await sourceDir.removeEntry('captures', { recursive: true });
+        } catch { /* no captures dir */ }
+        // Move scene/ into src_0001/scene/
+        try {
+          const oldScene = await sourceDir.getDirectoryHandle('scene');
+          const newScene = await srcDir.getDirectoryHandle('scene', { create: true });
+          for await (const [fname, fhandle] of oldScene.entries()) {
+            if (fhandle.kind === 'file') {
+              const f = await fhandle.getFile();
+              await writeBlobFile(newScene, fname, f);
+            }
+          }
+          await sourceDir.removeEntry('scene', { recursive: true });
+        } catch { /* no scene dir */ }
+        sessionData.sources = [{ id: srcId, filename: sessionData.reference_filename }];
+        sessionData.active_source = srcId;
+        delete sessionData.reference_initialized;
+        delete sessionData.reference_filename;
+        await writeSessionFile();
+      }
+
       // ── Folder picking ────────────────────────────────────────
 
       async function pickFolder() {
@@ -409,6 +684,7 @@
           const existing = await readSessionFile(dirHandle);
           if (existing) {
             sessionData = existing;
+            await migrateLegacySession();
             activateSession('Loaded existing session.');
           } else {
             document.getElementById('confirmFolderName').textContent = dirHandle.name;
@@ -424,13 +700,13 @@
           sessionData = {
             session_id: generateSessionId(),
             created_at: new Date().toISOString(),
-            reference_initialized: false,
+            sources: [],
+            active_source: null,
             jobs: []
           };
 
           // Create folder structure
-          const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
-          await sourceDir.getDirectoryHandle('captures', { create: true });
+          await sessionDirHandle.getDirectoryHandle('source', { create: true });
 
           await writeSessionFile();
           activateSession('Session initialized.');
@@ -441,9 +717,10 @@
 
       function activateSession(message) {
         document.getElementById('sessionDisplay').textContent = sessionData.session_id;
+        renderSourceSelect();
         renderJobList();
         setUIState('ready');
-        drawMockScene();
+        initScene();
         log(message || 'Session ready.');
       }
 
@@ -465,40 +742,188 @@
         ).join('');
       }
 
-      // ── Canvas ────────────────────────────────────────────────
+      // ── Three.js scene ────────────────────────────────────────
 
-      function drawMockScene() {
+      let renderer, scene, orbitCamera, shotCamera, cameraHelper, controls;
+      let imagePlane = null;
+      let sceneReady = false;
+      const orbitTarget = new THREE.Vector3(0, 0, 0);
+
+      function getActiveCameraMode() {
+        return document.getElementById('activeCamera')?.value === 'shot' ? 'shot' : 'orbit';
+      }
+
+      function getActiveRenderCamera() {
+        return getActiveCameraMode() === 'shot' ? shotCamera : orbitCamera;
+      }
+
+      function toDegrees(rad) {
+        return THREE.MathUtils.radToDeg(rad);
+      }
+
+      function getShotDeltaPose() {
+        return {
+          x: shotCamera.position.x - SHOT_INITIAL_POS.x,
+          y: shotCamera.position.y - SHOT_INITIAL_POS.y,
+          z: shotCamera.position.z - SHOT_INITIAL_POS.z,
+          pitch: toDegrees(shotCamera.rotation.x - SHOT_INITIAL_ROT.x),
+          yaw: toDegrees(shotCamera.rotation.y - SHOT_INITIAL_ROT.y),
+          roll: toDegrees(shotCamera.rotation.z - SHOT_INITIAL_ROT.z)
+        };
+      }
+
+      function setControlsCamera(mode) {
+        if (!controls) return;
+        if (mode === 'shot') {
+          if (controls.object === orbitCamera) orbitTarget.copy(controls.target);
+          controls.object = shotCamera;
+          const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(shotCamera.quaternion);
+          controls.target.copy(shotCamera.position).add(forward);
+        } else {
+          controls.object = orbitCamera;
+          controls.target.copy(orbitTarget);
+        }
+        controls.update();
+      }
+
+      function resetActiveCamera() {
+        const mode = getActiveCameraMode();
+        if (mode === 'shot') {
+          const fov = lensFov[document.getElementById('lensPreset').value] || 47;
+          shotCamera.position.copy(SHOT_INITIAL_POS);
+          shotCamera.lookAt(0, 0, 0);
+          shotCamera.fov = fov;
+          shotCamera.updateProjectionMatrix();
+          setControlsCamera('shot');
+        } else {
+          orbitCamera.position.set(4, 3, 6);
+          orbitCamera.lookAt(0, 0, 0);
+          orbitTarget.set(0, 0, 0);
+          controls.target.set(0, 0, 0);
+          setControlsCamera('orbit');
+        }
+        cameraHelper.update();
+      }
+
+      function updateCameraPanel() {
+        if (!orbitCamera || !shotCamera) return;
+        const mode = getActiveCameraMode();
+        const activeCamera = mode === 'shot' ? shotCamera : orbitCamera;
+
+        document.getElementById('activePoseTitle').textContent =
+          mode === 'shot' ? 'Shot Camera Pose' : 'Orbit Camera Pose';
+        document.getElementById('poseX').textContent = activeCamera.position.x.toFixed(2);
+        document.getElementById('poseY').textContent = activeCamera.position.y.toFixed(2);
+        document.getElementById('poseZ').textContent = activeCamera.position.z.toFixed(2);
+        document.getElementById('posePitch').textContent = toDegrees(activeCamera.rotation.x).toFixed(2);
+        document.getElementById('poseYaw').textContent = toDegrees(activeCamera.rotation.y).toFixed(2);
+        document.getElementById('poseRoll').textContent = toDegrees(activeCamera.rotation.z).toFixed(2);
+
+        const deltaSection = document.getElementById('deltaSection');
+        const lensRow = document.getElementById('lensRow');
+        lensRow.style.display = mode === 'shot' ? '' : 'none';
+        deltaSection.style.display = mode === 'shot' ? '' : 'none';
+        if (mode === 'shot') {
+          const delta = getShotDeltaPose();
+          document.getElementById('deltaX').textContent = delta.x.toFixed(2);
+          document.getElementById('deltaY').textContent = delta.y.toFixed(2);
+          document.getElementById('deltaZ').textContent = delta.z.toFixed(2);
+          document.getElementById('deltaPitch').textContent = delta.pitch.toFixed(2);
+          document.getElementById('deltaYaw').textContent = delta.yaw.toFixed(2);
+          document.getElementById('deltaRoll').textContent = delta.roll.toFixed(2);
+        }
+      }
+
+      function initScene() {
+        if (sceneReady) return;
+        sceneReady = true;
+
         const canvas = document.getElementById('scene');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        const lensPreset = document.getElementById('lensPreset');
-        const dolly = document.getElementById('dolly');
-        const fov = lensFov[lensPreset.value] || 47;
-        const z = Number(dolly.value);
-        const w = canvas.width;
-        const h = canvas.height;
 
-        const g = ctx.createLinearGradient(0, 0, w, h);
-        g.addColorStop(0, '#f7f0e6');
-        g.addColorStop(1, '#d8e5f0');
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, w, h);
+        // Renderer
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setClearColor(0x1a1a1a);
 
-        ctx.fillStyle = '#1f2937';
-        ctx.font = '700 34px sans-serif';
-        ctx.fillText('Mock Splat View', 24, 48);
+        // Scene
+        scene = new THREE.Scene();
 
-        ctx.font = '500 18px sans-serif';
-        ctx.fillText(`Lens: ${lensPreset.value}  FOV: ${fov} deg`, 24, 82);
-        ctx.fillText(`Dolly Z: ${z.toFixed(2)} m`, 24, 108);
-        ctx.fillText(`Time: ${new Date().toISOString()}`, 24, 134);
+        // Orbit camera — the user navigates with this one
+        orbitCamera = new THREE.PerspectiveCamera(50, canvas.width / canvas.height, 0.01, 1000);
+        orbitCamera.position.set(4, 3, 6);
+        orbitCamera.lookAt(0, 0, 0);
 
-        const radius = Math.max(32, 120 - fov + z * 12);
-        ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(w * 0.7, h * 0.55, radius, 0, Math.PI * 2);
-        ctx.stroke();
+        // Shot camera — represents the lens/dolly controls; its frustum is visualized
+        const fov = lensFov[document.getElementById('lensPreset').value] || 47;
+        shotCamera = new THREE.PerspectiveCamera(fov, canvas.width / canvas.height, 0.1, 20);
+        shotCamera.position.copy(SHOT_INITIAL_POS);
+        shotCamera.lookAt(0, 0, 0);
+        SHOT_INITIAL_ROT.copy(shotCamera.rotation);
+
+        // Camera helper (orange frustum wireframe)
+        cameraHelper = new THREE.CameraHelper(shotCamera);
+        scene.add(cameraHelper);
+
+        // Grid (ground plane)
+        const grid = new THREE.GridHelper(10, 20, 0x444444, 0x333333);
+        scene.add(grid);
+
+        // Axes helper
+        const axes = new THREE.AxesHelper(1);
+        scene.add(axes);
+
+        // OrbitControls
+        controls = new OrbitControls(orbitCamera, renderer.domElement);
+        controls.target.set(0, 0, 0);
+        orbitTarget.copy(controls.target);
+        controls.update();
+        setControlsCamera(getActiveCameraMode());
+
+        // Render loop
+        function animate() {
+          requestAnimationFrame(animate);
+          controls.update();
+          const activeMode = getActiveCameraMode();
+          if (activeMode === 'orbit') orbitTarget.copy(controls.target);
+          cameraHelper.visible = activeMode !== 'shot';
+          renderer.render(scene, getActiveRenderCamera());
+          updateCameraPanel();
+        }
+        animate();
+      }
+
+      function updateShotCamera() {
+        if (!shotCamera) return;
+        const fov = lensFov[document.getElementById('lensPreset').value] || 47;
+        shotCamera.fov = fov;
+        shotCamera.updateProjectionMatrix();
+        cameraHelper.update();
+      }
+
+      function setImagePlane(file) {
+        if (!scene) return;
+        if (imagePlane) {
+          scene.remove(imagePlane);
+          imagePlane.geometry.dispose();
+          imagePlane.material.map?.dispose();
+          imagePlane.material.dispose();
+          imagePlane = null;
+        }
+        if (!file) return;
+
+        const url = URL.createObjectURL(file);
+        new THREE.TextureLoader().load(url, (tex) => {
+          URL.revokeObjectURL(url);
+          const aspect = tex.image.width / tex.image.height;
+          const h = 2;
+          const w = h * aspect;
+          const geo = new THREE.PlaneGeometry(w, h);
+          const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+          imagePlane = new THREE.Mesh(geo, mat);
+          // Stand it upright at the origin — the shot camera looks at it from z=3
+          imagePlane.position.set(0, h / 2, 0);
+          scene.add(imagePlane);
+        });
       }
 
       // ── File helpers ──────────────────────────────────────────
@@ -547,12 +972,14 @@
       }
 
       function getDeltaPoseJson() {
-        const dolly = document.getElementById('dolly');
-        const z = Number(dolly.value);
+        const delta = getShotDeltaPose();
         return {
-          x: 0, y: 0,
-          z: Number((z - referenceZ).toFixed(4)),
-          pitch: 0, yaw: 0, roll: 0,
+          x: Number(delta.x.toFixed(4)),
+          y: Number(delta.y.toFixed(4)),
+          z: Number(delta.z.toFixed(4)),
+          pitch: Number(delta.pitch.toFixed(4)),
+          yaw: Number(delta.yaw.toFixed(4)),
+          roll: Number(delta.roll.toFixed(4)),
           units: 'meters',
           angles: 'degrees'
         };
@@ -562,17 +989,24 @@
 
       document.getElementById('pickDirInit').onclick = pickFolder;
       document.getElementById('pickDirSwitch').onclick = pickFolder;
+      // Note: File System Access API does not expose the full filesystem path,
+      // so we can't open Finder directly. Show folder name as best fallback.
+      document.getElementById('btnOpenFolder').onclick = () => {
+        if (sessionDirHandle) log('Session folder: ' + sessionDirHandle.name);
+      };
       document.getElementById('btnCancel').onclick = () => setUIState('pick');
       document.getElementById('btnInit').onclick = initializeSession;
 
       document.getElementById('start').onclick = async () => {
         try {
+          const activeSource = getActiveSource();
+          if (!activeSource) { log('No source selected. Upload an image first.'); return; }
           const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
               session_id: sessionData.session_id,
-              reference_image_path: `shots/${sessionData.session_id}/source/reference.png`,
+              reference_image_path: `shots/${sessionData.session_id}/source/${activeSource.id}/${activeSource.filename}`,
               force_regenerate: false
             })
           });
@@ -612,29 +1046,69 @@
         }
       };
 
-      document.getElementById('initRef').onclick = async () => {
+      document.getElementById('sourceSelect').onchange = async () => {
+        const sel = document.getElementById('sourceSelect');
+        if (sel.value === '__new__') {
+          document.getElementById('refFile').click();
+          // Reset to previous selection while file picker is open
+          sel.value = sessionData.active_source || '';
+          return;
+        }
+        if (!sel.value) return;
+        sessionData.active_source = sel.value;
+        await writeSessionFile();
+        renderSourceSelect();
+      };
+
+      document.getElementById('refFile').onchange = async () => {
+        const fileInput = document.getElementById('refFile');
+        const file = fileInput.files?.[0];
+        if (!file) return;
+        if (!confirm(`Copy "${file.name}" into a new source folder?`)) {
+          fileInput.value = '';
+          return;
+        }
         try {
-          const file = document.getElementById('refFile').files?.[0];
-          if (!file) throw new Error('Choose a reference image first.');
           const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
-          if (await fileExists(sourceDir, 'reference.png')) {
-            log('reference.png already exists in source/. Skipping copy.');
-            return;
-          }
-          await writeBlobFile(sourceDir, 'reference.png', file);
-          sessionData.reference_initialized = true;
+          const srcId = await nextSourceId(sourceDir);
+          const srcDir = await sourceDir.getDirectoryHandle(srcId, { create: true });
+          await srcDir.getDirectoryHandle('captures', { create: true });
+          await writeBlobFile(srcDir, file.name, file);
+          if (!sessionData.sources) sessionData.sources = [];
+          sessionData.sources.push({ id: srcId, filename: file.name });
+          sessionData.active_source = srcId;
           await writeSessionFile();
-          log('reference.png copied to source/reference.png');
+          renderSourceSelect();
+          // Load into 3D scene
+          setImagePlane(file);
+          // Show dims
+          const nameEl = document.getElementById('refFileName');
+          const dimsEl = document.getElementById('refFileDims');
+          nameEl.textContent = file.name;
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => {
+            dimsEl.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+            dimsEl.style.display = '';
+            URL.revokeObjectURL(url);
+          };
+          img.onerror = () => { dimsEl.style.display = 'none'; URL.revokeObjectURL(url); };
+          img.src = url;
+          log(`${file.name} copied to source/${srcId}/${file.name}`);
         } catch (err) {
           log({ error: String(err) });
         }
+        fileInput.value = '';
       };
 
       document.getElementById('capture').onclick = async () => {
         try {
+          const activeSource = getActiveSource();
+          if (!activeSource) { log('No source selected. Upload an image first.'); return; }
           const canvas = document.getElementById('scene');
           const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
-          const capturesDir = await sourceDir.getDirectoryHandle('captures', { create: true });
+          const srcDir = await sourceDir.getDirectoryHandle(activeSource.id);
+          const capturesDir = await srcDir.getDirectoryHandle('captures', { create: true });
           const capName = await nextCaptureName(capturesDir);
           const capDir = await capturesDir.getDirectoryHandle(capName, { create: true });
 
@@ -645,17 +1119,20 @@
           await writeTextFile(capDir, 'camera.json', JSON.stringify(getCameraJson(), null, 2));
           await writeTextFile(capDir, 'delta_pose.json', JSON.stringify(getDeltaPoseJson(), null, 2));
 
-          log({ message: 'Capture exported', path: `source/captures/${capName}/`, files: ['target.png', 'camera.json', 'delta_pose.json'] });
+          log({ message: 'Capture exported', path: `source/${activeSource.id}/captures/${capName}/`, files: ['target.png', 'camera.json', 'delta_pose.json'] });
         } catch (err) {
           log({ error: String(err) });
         }
       };
 
-      document.getElementById('lensPreset').onchange = drawMockScene;
-      document.getElementById('dolly').oninput = () => {
-        document.getElementById('dollyValue').textContent =
-          Number(document.getElementById('dolly').value).toFixed(2);
-        drawMockScene();
+      document.getElementById('lensPreset').onchange = updateShotCamera;
+      document.getElementById('activeCamera').onchange = () => {
+        setControlsCamera(getActiveCameraMode());
+        updateCameraPanel();
+      };
+      document.getElementById('resetCamera').onclick = () => {
+        resetActiveCamera();
+        updateCameraPanel();
       };
 
       // Start in pick state
