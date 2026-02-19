@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { generateRequestSchema, type GenerateJob } from "../../../../shared/schemas/generate-job";
 import { config } from "./config";
 import { findCompletedJob, findInFlightJob, loadJob, upsertJob } from "./jobs";
@@ -8,6 +9,63 @@ import { parseSessionId, resolveWithin, toRepoRelative } from "./paths";
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+async function writeRealManifest(sessionId: string, plyAbsPath: string): Promise<string> {
+  const manifestPath = resolveWithin(config.shotsRoot, `${sessionId}/source/scene/manifest.json`);
+  await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+  await fs.writeFile(
+    manifestPath,
+    JSON.stringify(
+      {
+        version: "1.0",
+        generated_at: nowIso(),
+        ply_path: toRepoRelative(config.repoRoot, plyAbsPath)
+      },
+      null,
+      2
+    )
+  );
+  return toRepoRelative(config.repoRoot, manifestPath);
+}
+
+function runMlSharp(referencePath: string, sceneDir: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "predict",
+      "-i",
+      referencePath,
+      "-o",
+      sceneDir,
+      "-c",
+      config.mlSharpCheckpointPath
+    ];
+    const child = spawn(config.mlSharpBin, args, { stdio: ["ignore", "pipe", "pipe"] });
+
+    let stderr = "";
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("ML_SHARP_TIMEOUT"));
+    }, config.mlSharpTimeoutMs);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`ml-sharp exited with code ${code}: ${stderr.slice(-500)}`));
+      }
+    });
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
 }
 
 async function writeMockManifest(sessionId: string): Promise<string> {
@@ -114,6 +172,49 @@ export async function startGeneration(input: unknown): Promise<{
         await upsertJob(sessionId, job);
       }
     }, 500);
+  } else {
+    setImmediate(async () => {
+      try {
+        job = { ...job, status: "running", stage: "running_ml_sharp", progress_percent: 10, updated_at: nowIso() };
+        await upsertJob(sessionId, job);
+
+        const sceneDir = resolveWithin(config.shotsRoot, `${sessionId}/source/scene`);
+        await fs.mkdir(sceneDir, { recursive: true });
+
+        await runMlSharp(referencePath, sceneDir);
+
+        job = { ...job, stage: "writing_outputs", progress_percent: 90, updated_at: nowIso() };
+        await upsertJob(sessionId, job);
+
+        const refStem = path.basename(referencePath, path.extname(referencePath));
+        const plyAbsPath = path.join(sceneDir, `${refStem}.ply`);
+        const manifestPath = await writeRealManifest(sessionId, plyAbsPath);
+
+        job = {
+          ...job,
+          status: "completed",
+          stage: "completed",
+          progress_percent: 100,
+          scene_manifest_path: manifestPath,
+          updated_at: nowIso()
+        };
+        await upsertJob(sessionId, job);
+      } catch (error) {
+        const isTimeout = error instanceof Error && error.message === "ML_SHARP_TIMEOUT";
+        job = {
+          ...job,
+          status: "failed",
+          stage: "failed",
+          progress_percent: 100,
+          updated_at: nowIso(),
+          error: {
+            code: isTimeout ? "ML_SHARP_TIMEOUT" : "ML_SHARP_EXEC_FAILED",
+            message: error instanceof Error ? error.message : "Unknown error"
+          }
+        };
+        await upsertJob(sessionId, job);
+      }
+    });
   }
 
   return {

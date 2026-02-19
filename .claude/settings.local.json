@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm test:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git clone:*)",
+      "Bash(brew list:*)",
+      "Bash(pyenv versions:*)",
+      "Bash(brew:*)",
+      "Bash(/usr/local/opt/python@3.13/bin/python3.13:*)",
+      "Bash(/usr/local/opt/python@3.13/bin/python3.13 -m venv:*)",
+      "Bash(/Users/evanboehm/code/istanbul3d/.venv-mlsharp/bin/pip install:*)",
+      "Bash(/Users/evanboehm/code/istanbul3d/.venv-mlsharp/bin/sharp:*)",
+      "Bash(/Users/evanboehm/code/istanbul3d/.venv-mlsharp/bin/pip index versions:*)",
+      "Bash(/usr/local/opt/python@3.11/bin/python3.11:*)",
+      "Bash(/Users/evanboehm/code/istanbul3d/.venv-mlsharp-311/bin/pip install:*)",
+      "Bash(/Users/evanboehm/code/istanbul3d/.venv-mlsharp-311/bin/pip index versions torch)",
+      "Bash(python3:*)",
+      "Bash(/Users/evanboehm/code/istanbul3d/.venv-mlsharp-311/bin/sharp:*)",
+      "Bash(npm run build:*)",
+      "Bash(GENERATION_MODE=mock node:*)"
+    ]
+  }
+}

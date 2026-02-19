@@ -37,6 +37,12 @@ repairRouter.post(
   ]),
   async (req, res) => {
     const start = Date.now();
+    let sessionId: string | undefined;
+    let repairId: string | undefined;
+    let uploadedReferenceUrl: string | undefined;
+    let uploadedTargetUrl: string | undefined;
+    let deltaPose: { x: number; y: number; z: number; pitch: number; yaw: number; roll: number } | undefined;
+    let withNotes: string | undefined;
 
     try {
       if (req.body.paid_confirm !== "true") {
@@ -54,13 +60,16 @@ repairRouter.post(
         return res.status(400).json({ error: "MISSING_REQUIRED_FILES" });
       }
 
-      const deltaPose = deltaPoseSchema.parse(JSON.parse(deltaPoseRaw.buffer.toString("utf8")));
+      sessionId = parseSessionId(String(req.body.session_id || ""));
+      repairId = String(req.body.repair_id || `repair_${Date.now()}`);
+
+      deltaPose = deltaPoseSchema.parse(JSON.parse(deltaPoseRaw.buffer.toString("utf8")));
       cameraSchema.parse(JSON.parse(cameraRaw.buffer.toString("utf8")));
 
-      const referenceUrl = await fal.storage.upload(
+      uploadedReferenceUrl = await fal.storage.upload(
         new Blob([Uint8Array.from(reference.buffer)], { type: reference.mimetype })
       );
-      const targetUrl = await fal.storage.upload(
+      uploadedTargetUrl = await fal.storage.upload(
         new Blob([Uint8Array.from(target.buffer)], { type: target.mimetype })
       );
 
@@ -69,13 +78,13 @@ repairRouter.post(
         `${deltaPose.x},${deltaPose.y},${deltaPose.z},${deltaPose.pitch},${deltaPose.yaw},${deltaPose.roll}`
       );
 
-      const withNotes = notes ? `${prompt}\n${notes.buffer.toString("utf8")}` : prompt;
+      withNotes = notes ? `${prompt}\n${notes.buffer.toString("utf8")}` : prompt;
 
       const result = await Promise.race([
         fal.subscribe(config.falModel, {
           input: {
             prompt: withNotes,
-            image_urls: [referenceUrl, targetUrl],
+            image_urls: [uploadedReferenceUrl, uploadedTargetUrl],
             loras: [{ path: config.falLoraPath, scale: 1.0 }],
             num_inference_steps: 28,
             guidance_scale: 5,
@@ -96,8 +105,9 @@ repairRouter.post(
       const response = await fetch(imageUrl);
       const imageBuffer = Buffer.from(await response.arrayBuffer());
 
-      const sessionId = parseSessionId(String(req.body.session_id || ""));
-      const repairId = String(req.body.repair_id || `repair_${Date.now()}`);
+      const width = imageBuffer.readUInt32BE(16);   // PNG IHDR bytes 16-19
+      const height = imageBuffer.readUInt32BE(20);  // PNG IHDR bytes 20-23
+
       const outputDir = resolveWithin(config.shotsRoot, `${sessionId}/repairs/${repairId}/output`);
       await fs.mkdir(outputDir, { recursive: true });
       const imagePath = path.join(outputDir, "repaired.png");
@@ -127,8 +137,8 @@ repairRouter.post(
             num_images: 1,
             seed: null
           },
-          uploaded_reference_url: referenceUrl,
-          uploaded_target_url: targetUrl
+          uploaded_reference_url: uploadedReferenceUrl,
+          uploaded_target_url: uploadedTargetUrl
         },
         prompt: {
           template_version: "1.0",
@@ -142,7 +152,12 @@ repairRouter.post(
             roll: deltaPose.roll
           }
         },
-        output: undefined,
+        output: {
+          repaired_image_path: `shots/${sessionId}/repairs/${repairId}/output/repaired.png`,
+          width,
+          height,
+          bytes: imageBuffer.byteLength
+        },
         error: null
       };
 
@@ -153,6 +168,64 @@ repairRouter.post(
       if (error instanceof Error && ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message)) {
         return res.status(400).json({ error: error.message });
       }
+
+      if (sessionId && repairId && deltaPose && withNotes) {
+        try {
+          const failedOutputDir = resolveWithin(config.shotsRoot, `${sessionId}/repairs/${repairId}/output`);
+          await fs.mkdir(failedOutputDir, { recursive: true });
+          const isTimeout = error instanceof Error && error.message === "FAL_TIMEOUT";
+          const failureMeta: RepairMeta = {
+            schema_version: "1.0",
+            repair_id: repairId,
+            session_id: sessionId,
+            created_at: new Date(start).toISOString(),
+            completed_at: new Date().toISOString(),
+            duration_ms: Date.now() - start,
+            status: "failed",
+            input: {
+              reference_image_path: `shots/${sessionId}/repairs/${repairId}/input/reference.png`,
+              target_image_path: `shots/${sessionId}/repairs/${repairId}/input/target.png`,
+              delta_pose_path: `shots/${sessionId}/repairs/${repairId}/input/delta_pose.json`,
+              camera_path: `shots/${sessionId}/repairs/${repairId}/input/camera.json`
+            },
+            fal: {
+              model: config.falModel,
+              loras: [{ path: config.falLoraPath, scale: 1.0 }],
+              parameters: {
+                num_inference_steps: 28,
+                guidance_scale: 5,
+                output_format: "png",
+                num_images: 1,
+                seed: null
+              },
+              uploaded_reference_url: uploadedReferenceUrl,
+              uploaded_target_url: uploadedTargetUrl
+            },
+            prompt: {
+              template_version: "1.0",
+              text: withNotes,
+              delta_pose_values: {
+                x: deltaPose.x,
+                y: deltaPose.y,
+                z: deltaPose.z,
+                pitch: deltaPose.pitch,
+                yaw: deltaPose.yaw,
+                roll: deltaPose.roll
+              }
+            },
+            output: undefined,
+            error: {
+              code: isTimeout ? "FAL_TIMEOUT" : "FAL_ERROR",
+              message: error instanceof Error ? error.message : "Unknown error",
+              retryable: isTimeout
+            }
+          };
+          await writeRepairMeta(path.join(failedOutputDir, "repair_meta.json"), failureMeta);
+        } catch {
+          // ignore meta write errors on failure path
+        }
+      }
+
       return res.status(500).json({ error: "REPAIR_FAILED", detail: error instanceof Error ? error.message : "Unknown error" });
     }
   }
