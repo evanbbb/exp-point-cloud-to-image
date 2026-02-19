@@ -5,6 +5,7 @@ import multer from "multer";
 import { generateStatusSchema } from "../../../../shared/schemas/generate-job";
 import { config } from "../lib/config";
 import { cancelGeneration, getGenerationStatus, startGeneration } from "../lib/generation-service";
+import { openPathInFileManager } from "../lib/open-path";
 import { parseSessionId, resolveWithin } from "../lib/paths";
 
 export const generateRouter = Router();
@@ -62,6 +63,61 @@ generateRouter.post("/api/generate/sync-reference", upload.single("reference"), 
     return res.status(500).json({ error: "SYNC_REFERENCE_FAILED", detail: errorDetail(error) });
   }
 });
+
+generateRouter.post(
+  "/api/capture/sync",
+  upload.fields([
+    { name: "target", maxCount: 1 },
+    { name: "camera", maxCount: 1 },
+    { name: "delta", maxCount: 1 }
+  ]),
+  async (req, res) => {
+    try {
+      const sessionId = parseSessionId(String(req.body.session_id ?? ""));
+      const sourceId = String(req.body.source_id ?? "");
+      const captureId = String(req.body.capture_id ?? "");
+      const openFinder = String(req.body.open_finder ?? "") === "1";
+      if (!/^src_\d{4}$/.test(sourceId)) {
+        return res.status(400).json({ error: "INVALID_SOURCE_ID" });
+      }
+      if (!/^cap_\d{4}$/.test(captureId)) {
+        return res.status(400).json({ error: "INVALID_CAPTURE_ID" });
+      }
+
+      const files = req.files as Record<string, Express.Multer.File[]>;
+      const target = files?.target?.[0];
+      const camera = files?.camera?.[0];
+      const delta = files?.delta?.[0];
+      if (!target || !camera || !delta) {
+        return res.status(400).json({ error: "MISSING_CAPTURE_FILES" });
+      }
+
+      const captureDir = resolveWithin(config.shotsRoot, `${sessionId}/source/${sourceId}/captures/${captureId}`);
+      await fs.mkdir(captureDir, { recursive: true });
+      await fs.writeFile(path.join(captureDir, "target.png"), target.buffer);
+      await fs.writeFile(path.join(captureDir, "camera.json"), camera.buffer);
+      await fs.writeFile(path.join(captureDir, "delta_pose.json"), delta.buffer);
+
+      if (openFinder) {
+        await openPathInFileManager(captureDir);
+      }
+
+      return res.status(200).json({
+        session_id: sessionId,
+        source_id: sourceId,
+        capture_id: captureId,
+        capture_path: `shots/${sessionId}/source/${sourceId}/captures/${captureId}`,
+        finder_opened: openFinder
+      });
+    } catch (error) {
+      const invalidSession = invalidSessionMessage(error);
+      if (invalidSession) {
+        return res.status(400).json({ error: invalidSession });
+      }
+      return res.status(500).json({ error: "CAPTURE_SYNC_FAILED", detail: errorDetail(error) });
+    }
+  }
+);
 
 generateRouter.post("/api/generate", async (req, res) => {
   try {

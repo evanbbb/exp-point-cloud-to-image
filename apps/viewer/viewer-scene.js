@@ -15,6 +15,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
   const plyLoader = new PLYLoader();
   const notifiedCompletedJobs = new Set();
   let completionAudioContext = null;
+  let guideAspect = null;
 
   function quantile(values, p) {
     if (!values?.length) return 0;
@@ -236,6 +237,35 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     };
   }
 
+  function refreshAspectGuide() {
+    const guide = document.getElementById('aspectGuide');
+    const canvas = document.getElementById('scene');
+    if (!guide || !canvas || !guideAspect) {
+      if (guide) guide.style.display = 'none';
+      return;
+    }
+    const cw = canvas.clientWidth || canvas.width;
+    const ch = canvas.clientHeight || canvas.height;
+    const canvasAspect = cw / ch;
+    let w;
+    let h;
+    if (guideAspect >= canvasAspect) {
+      w = cw * 0.92;
+      h = w / guideAspect;
+    } else {
+      h = ch * 0.92;
+      w = h * guideAspect;
+    }
+    guide.style.width = `${Math.max(8, Math.round(w))}px`;
+    guide.style.height = `${Math.max(8, Math.round(h))}px`;
+    guide.style.display = '';
+  }
+
+  function setAspectGuideAspect(aspect) {
+    guideAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : null;
+    refreshAspectGuide();
+  }
+
   function setControlsCamera(mode) {
     if (!controls) return;
     if (mode === 'shot') {
@@ -346,6 +376,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       cameraHelper.visible = activeMode !== 'shot';
       renderer.render(scene, getActiveRenderCamera());
       updateCameraPanel();
+      refreshAspectGuide();
     }
     animate();
   }
@@ -387,6 +418,14 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     if (!shotCamera) return;
     SHOT_INITIAL_POS.copy(shotCamera.position);
     SHOT_INITIAL_ROT.copy(shotCamera.rotation);
+  }
+
+  function goToOriginalPose() {
+    if (!shotCamera) return;
+    shotCamera.position.copy(SHOT_INITIAL_POS);
+    shotCamera.rotation.copy(SHOT_INITIAL_ROT);
+    shotCamera.updateProjectionMatrix();
+    cameraHelper.update();
   }
 
   function fitShotCameraToGeneratedScene({ resetDelta = true } = {}) {
@@ -493,6 +532,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       generatedSceneObject = null;
     }
     loadedGeneratedJobId = null;
+    refreshAspectGuide();
   }
 
   function getCameraJson() {
@@ -508,6 +548,14 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       far: 1000,
       sensor_width_mm: 36
     };
+  }
+
+  function getCameraJsonWithAspect(aspectOverride) {
+    const camera = getCameraJson();
+    if (Number.isFinite(aspectOverride) && aspectOverride > 0) {
+      camera.aspect = Number(aspectOverride);
+    }
+    return camera;
   }
 
   function getDeltaPoseJson() {
@@ -536,12 +584,16 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     resetActiveCamera,
     getShotDeltaPose,
     getCameraJson,
+    getCameraJsonWithAspect,
     getDeltaPoseJson,
     getLoadedGeneratedJobId: () => loadedGeneratedJobId,
     hasGeneratedScene: () => Boolean(generatedSceneObject),
     ensureCompletionAudioContext,
     playCompletionSound,
     getActiveCameraMode,
-    isCompletedStatus
+    isCompletedStatus,
+    setOriginalPose: setShotBaselineFromCurrent,
+    goToOriginalPose,
+    setAspectGuideAspect
   };
 }

@@ -336,9 +336,55 @@ i.ph { font-size: 16px; line-height: 1; }
   margin-bottom: 12px;
 }
 
+.scene-canvas-wrap {
+  width: fit-content;
+}
+
+.scene-canvas-frame {
+  position: relative;
+  width: fit-content;
+}
+
 .scene-row canvas {
   margin-bottom: 0;
   flex-shrink: 0;
+}
+
+.aspect-guide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px dashed rgba(0, 122, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6) inset;
+  pointer-events: none;
+  border-radius: 2px;
+  z-index: 3;
+}
+
+.capture-workflow-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.capture-workflow-left,
+.capture-workflow-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+@media (max-width: 860px) {
+  .capture-workflow-row {
+    flex-wrap: wrap;
+  }
+
+  .capture-workflow-right {
+    margin-left: auto;
+  }
 }
 
 .camera-panel {

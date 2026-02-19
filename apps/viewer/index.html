@@ -96,7 +96,21 @@
         </div>
 
         <div class="scene-row">
-          <canvas id="scene" width="960" height="540"></canvas>
+          <div class="scene-canvas-wrap">
+            <div class="scene-canvas-frame">
+              <canvas id="scene" width="960" height="540"></canvas>
+              <div id="aspectGuide" class="aspect-guide" style="display:none;"></div>
+            </div>
+            <div class="capture-workflow-row">
+              <div class="capture-workflow-left">
+                <button id="setOriginalPose" type="button">Set Original View</button>
+                <button id="capture" class="primary">Capture New View</button>
+              </div>
+              <div class="capture-workflow-right">
+                <button id="goOriginalPose" type="button">Reset To Original View</button>
+              </div>
+            </div>
+          </div>
           <div id="camera-panel" class="camera-panel">
             <div>
               <div class="section-label">Camera</div>
@@ -147,10 +161,6 @@
               </div>
             </div>
           </div>
-        </div>
-
-        <div class="row">
-          <button id="capture" class="primary">Capture View</button>
         </div>
 
         <div class="section">

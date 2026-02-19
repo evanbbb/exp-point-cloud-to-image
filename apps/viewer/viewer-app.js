@@ -193,7 +193,6 @@ async function initializeSession() {
 }
 
 function activateSession(message) {
-  sessionData.active_source = null;
   document.getElementById('sessionDisplay').textContent = sessionData.session_id;
   renderSourceSelect();
   renderJobList();
@@ -201,6 +200,7 @@ function activateSession(message) {
   initScene();
   clearGeneratedScene();
   setImagePlane(null);
+  setAspectGuideAspect(null);
   if (sessionData.jobs?.some(j => j.status !== 'failed' && j.status !== 'completed' && j.status !== 'complete')) {
     startAutoPoll();
   }
@@ -225,7 +225,20 @@ const generationController = createGenerationController({
   log,
   readJsonResponse,
   isCompletedStatus,
-  sceneController
+  sceneController,
+  ensureActiveSourceAspect: async (job) => {
+    if (!getActiveSource()) {
+      const fromManifest = String(job?.scene_manifest_path || '').match(/\/source\/(src_\d{4})\//);
+      const sourceId = fromManifest?.[1];
+      if (sourceId && sessionData?.sources?.some(s => s.id === sourceId)) {
+        sessionData.active_source = sourceId;
+        await writeSessionFile();
+        renderSourceSelect();
+      }
+    }
+    const aspect = await getActiveSourceAspect();
+    setAspectGuideAspect(aspect);
+  }
 });
 
 const {
@@ -248,8 +261,11 @@ const {
   updateCameraPanel,
   resetActiveCamera,
   fitShotCameraToGeneratedScene,
-  getCameraJson,
-  getDeltaPoseJson
+  getCameraJsonWithAspect,
+  getDeltaPoseJson,
+  setOriginalPose,
+  goToOriginalPose,
+  setAspectGuideAspect
 } = sceneController;
 
 // ── File helpers ──────────────────────────────────────────
@@ -276,6 +292,88 @@ async function nextCaptureName(capturesDirHandle) {
     if (m && Number(m[1]) > max) max = Number(m[1]);
   }
   return `cap_${String(max + 1).padStart(4, '0')}`;
+}
+
+async function readImageDims(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const dims = { width: img.naturalWidth, height: img.naturalHeight };
+      URL.revokeObjectURL(url);
+      resolve(dims);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to read image dimensions.'));
+    };
+    img.src = url;
+  });
+}
+
+async function showSelectedImageMetadata(file) {
+  const nameEl = document.getElementById('refFileName');
+  const dimsEl = document.getElementById('refFileDims');
+  nameEl.textContent = file?.name ?? '';
+  if (!file) {
+    dimsEl.style.display = 'none';
+    setAspectGuideAspect(null);
+    return null;
+  }
+  try {
+    const dims = await readImageDims(file);
+    dimsEl.textContent = `${dims.width} × ${dims.height}`;
+    dimsEl.style.display = '';
+    const active = getActiveSource();
+    if (active) {
+      active.width = dims.width;
+      active.height = dims.height;
+    }
+    setAspectGuideAspect(dims.width / dims.height);
+    return dims;
+  } catch {
+    dimsEl.style.display = 'none';
+    return null;
+  }
+}
+
+async function getActiveSourceAspect() {
+  const active = getActiveSource();
+  if (!active) return null;
+  if (Number.isFinite(active.width) && Number.isFinite(active.height) && active.width > 0 && active.height > 0) {
+    return active.width / active.height;
+  }
+  const file = await loadSourceImageById(active.id);
+  if (!file) return null;
+  const dims = await showSelectedImageMetadata(file);
+  if (!dims) return null;
+  await writeSessionFile();
+  return dims.width / dims.height;
+}
+
+async function captureCanvasAtAspect(canvas, targetAspect) {
+  const sourceW = canvas.width;
+  const sourceH = canvas.height;
+  const sourceAspect = sourceW / sourceH;
+  if (!Number.isFinite(targetAspect) || targetAspect <= 0 || Math.abs(sourceAspect - targetAspect) < 0.0001) {
+    return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  }
+  let cropW = sourceW;
+  let cropH = sourceH;
+  if (targetAspect > sourceAspect) {
+    cropH = Math.max(1, Math.round(sourceW / targetAspect));
+  } else {
+    cropW = Math.max(1, Math.round(sourceH * targetAspect));
+  }
+  const sx = Math.max(0, Math.floor((sourceW - cropW) / 2));
+  const sy = Math.max(0, Math.floor((sourceH - cropH) / 2));
+  const out = document.createElement('canvas');
+  out.width = cropW;
+  out.height = cropH;
+  const ctx = out.getContext('2d');
+  if (!ctx) throw new Error('Failed to initialize 2D context for capture crop.');
+  ctx.drawImage(canvas, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+  return new Promise((resolve) => out.toBlob(resolve, 'image/png'));
 }
 
 async function readJsonResponse(res, label) {
@@ -433,6 +531,7 @@ document.getElementById('sourceSelect').onchange = async () => {
     renderSourceSelect();
     setImagePlane(file);
     await showSelectedImageMetadata(file);
+    await writeSessionFile();
   } catch (err) {
     log({ error: String(err) });
   }
@@ -460,6 +559,7 @@ document.getElementById('refFile').onchange = async () => {
     // Load into 3D scene
     setImagePlane(file);
     await showSelectedImageMetadata(file);
+    await writeSessionFile();
     log(`${file.name} copied to source/${srcId}/${file.name}`);
   } catch (err) {
     log({ error: String(err) });
@@ -477,15 +577,51 @@ document.getElementById('capture').onclick = async () => {
     const capturesDir = await srcDir.getDirectoryHandle('captures', { create: true });
     const capName = await nextCaptureName(capturesDir);
     const capDir = await capturesDir.getDirectoryHandle(capName, { create: true });
-
-    const targetBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    const captureAspect = await getActiveSourceAspect();
+    if (captureAspect) setAspectGuideAspect(captureAspect);
+    const targetBlob = await captureCanvasAtAspect(canvas, captureAspect);
     if (!targetBlob) throw new Error('Failed to encode canvas PNG.');
+    const cameraJson = JSON.stringify(getCameraJsonWithAspect(captureAspect), null, 2);
+    const deltaJson = JSON.stringify(getDeltaPoseJson(), null, 2);
 
     await writeBlobFile(capDir, 'target.png', targetBlob);
-    await writeTextFile(capDir, 'camera.json', JSON.stringify(getCameraJson(), null, 2));
-    await writeTextFile(capDir, 'delta_pose.json', JSON.stringify(getDeltaPoseJson(), null, 2));
+    await writeTextFile(capDir, 'camera.json', cameraJson);
+    await writeTextFile(capDir, 'delta_pose.json', deltaJson);
+    await capDir.getFileHandle('target.png');
+    await capDir.getFileHandle('camera.json');
+    await capDir.getFileHandle('delta_pose.json');
 
-    log({ message: 'Capture exported', path: `source/${activeSource.id}/captures/${capName}/`, files: ['target.png', 'camera.json', 'delta_pose.json'] });
+    let syncStatus = { synced: false, finder_opened: false };
+    try {
+      const syncForm = new FormData();
+      syncForm.append('session_id', sessionData.session_id);
+      syncForm.append('source_id', activeSource.id);
+      syncForm.append('capture_id', capName);
+      syncForm.append('open_finder', '1');
+      syncForm.append('target', targetBlob, 'target.png');
+      syncForm.append('camera', new Blob([cameraJson], { type: 'application/json' }), 'camera.json');
+      syncForm.append('delta', new Blob([deltaJson], { type: 'application/json' }), 'delta_pose.json');
+      const syncRes = await fetch('/api/capture/sync', { method: 'POST', body: syncForm });
+      const syncData = await readJsonResponse(syncRes, 'Capture sync');
+      syncStatus = {
+        synced: true,
+        finder_opened: Boolean(syncData?.finder_opened)
+      };
+    } catch (syncErr) {
+      syncStatus = {
+        synced: false,
+        finder_opened: false,
+        error: String(syncErr)
+      };
+    }
+
+    log({
+      message: 'Capture exported',
+      local_path: `source/${activeSource.id}/captures/${capName}/`,
+      files: ['target.png', 'camera.json', 'delta_pose.json'],
+      local_saved: true,
+      sync: syncStatus
+    });
   } catch (err) {
     log({ error: String(err) });
   }
@@ -505,6 +641,16 @@ document.getElementById('fitShotCamera').onclick = () => {
     log('Load output first to fit the shot camera.');
     return;
   }
+  setControlsCamera('shot');
+  updateCameraPanel();
+};
+document.getElementById('setOriginalPose').onclick = () => {
+  setOriginalPose();
+  updateCameraPanel();
+  log('Original shot pose set from current camera position.');
+};
+document.getElementById('goOriginalPose').onclick = () => {
+  goToOriginalPose();
   setControlsCamera('shot');
   updateCameraPanel();
 };

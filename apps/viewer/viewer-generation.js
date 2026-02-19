@@ -4,7 +4,8 @@ export function createGenerationController({
   log,
   readJsonResponse,
   isCompletedStatus,
-  sceneController
+  sceneController,
+  ensureActiveSourceAspect
 }) {
   let autoPollTimer = null;
 
@@ -138,6 +139,10 @@ export function createGenerationController({
     if (sceneController.getLoadedGeneratedJobId() === jobId) {
       if (!quiet) log(`[${jobId}] already loaded.`);
       return;
+    }
+
+    if (typeof ensureActiveSourceAspect === 'function') {
+      await ensureActiveSourceAspect(localJob);
     }
 
     await sceneController.loadGeneratedSceneFromJob(localJob);
