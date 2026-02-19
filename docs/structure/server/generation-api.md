@@ -42,9 +42,55 @@ Starts a new generation job for a session.
 }
 ```
 
+## Endpoint: `POST /api/generate/sync-reference`
+
+Uploads a browser-selected source image into server-managed session storage before generation.
+
+### Request (`multipart/form-data`)
+- `session_id` (string)
+- `source_id` (string, format: `src_####`)
+- `filename` (string)
+- `reference` (file)
+
+### Response (200)
+
+```json
+{
+  "session_id": "SESSION_20260218_130501",
+  "source_id": "src_0001",
+  "filename": "image 7.png",
+  "reference_image_path": "shots/SESSION_20260218_130501/source/src_0001/image 7.png"
+}
+```
+
 ## Endpoint: `GET /api/generate/:job_id`
 
 Returns status for a generation job.
+
+## Endpoint: `POST /api/generate/:job_id/cancel`
+
+Cancels a queued/running generation job.
+
+### Request
+- Query param: `session_id=<SESSION_ID>`
+
+### Response (200)
+
+```json
+{
+  "job_id": "gen_0001",
+  "session_id": "SESSION_20260218_130501",
+  "status": "failed",
+  "stage": "failed",
+  "progress_percent": 100,
+  "cancel_requested_at": "2026-02-18T13:05:40.100Z",
+  "cancelled_at": "2026-02-18T13:05:40.410Z",
+  "error": {
+    "code": "JOB_CANCELLED",
+    "message": "Generation cancelled by user."
+  }
+}
+```
 
 ### Response (200)
 
@@ -69,6 +115,12 @@ Returns status for a generation job.
   "status": "completed",
   "stage": "completed",
   "progress_percent": 100,
+  "logs_tail": [
+    "Running preprocessing.",
+    "Running inference.",
+    "Running postprocessing.",
+    "Saving 3DGS to ..."
+  ],
   "scene_manifest_path": "shots/SESSION_20260218_130501/source/scene/manifest.json",
   "created_at": "2026-02-18T13:05:10.443Z",
   "updated_at": "2026-02-18T13:06:21.790Z"
@@ -84,9 +136,11 @@ Returns status for a generation job.
   "status": "failed",
   "stage": "failed",
   "progress_percent": 100,
+  "cancel_requested_at": "2026-02-18T13:05:40.100Z",
+  "cancelled_at": "2026-02-18T13:05:40.410Z",
   "error": {
-    "code": "ML_SHARP_EXEC_FAILED",
-    "message": "ml-sharp process exited with code 1"
+    "code": "JOB_CANCELLED",
+    "message": "Generation cancelled by user."
   },
   "created_at": "2026-02-18T13:05:10.443Z",
   "updated_at": "2026-02-18T13:06:00.101Z"
@@ -118,29 +172,14 @@ Returns status for a generation job.
 ## Timeout and Errors
 - Max generation duration: 15 minutes.
 - Timeout error code: `ML_SHARP_TIMEOUT`.
+- Cancelled job code: `JOB_CANCELLED`.
 - Invalid path traversal attempt: `INVALID_SESSION_PATH`.
 - Missing reference image: `REFERENCE_NOT_FOUND`.
+- Server startup validation errors:
+  - `ML_SHARP_BIN_NOT_EXECUTABLE`
+  - `ML_SHARP_CHECKPOINT_NOT_READABLE`
 
 ## Viewer Polling Guidance
 - Poll `GET /api/generate/:job_id` every 1 second while `queued|running`.
 - Stop polling on `completed|failed`.
 - On `completed`, load scene from `scene_manifest_path`.
-
-## Mock Mode (No ml-sharp)
-
-V0 development may run without `ml-sharp` by enabling mock generation mode.
-
-### Toggle
-- Environment variable: `GENERATION_MODE=mock`
-- Default behavior for local development until `ml-sharp` is installed.
-
-### Mock Behavior
-- `POST /api/generate` creates a normal job record.
-- Job transitions to `completed` after a short delay (for example 300-800ms).
-- Server writes a mock scene manifest to:
-  - `shots/<SESSION_ID>/source/scene/manifest.json`
-- `GET /api/generate/:job_id` returns normal status payloads, identical contract to real mode.
-
-### Contract Guarantee
-- Viewer/repair clients must not depend on implementation details of real vs mock mode.
-- API response shape remains identical across both modes.

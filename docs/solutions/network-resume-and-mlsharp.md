@@ -5,7 +5,7 @@
 ### Implemented code
 - TypeScript workspace scaffold with apps + shared schemas.
 - Local server with:
-  - `POST /api/generate` (real ml-sharp mode + mock mode)
+  - `POST /api/generate` (real ml-sharp mode)
   - `GET /api/generate/:jobId`
   - `POST /api/repair` (single-item, paid-confirm required, fal staging via `fal.storage.upload`)
 - Viewer shell with:
@@ -27,8 +27,10 @@
 - `sharp --help` verified working
 
 ### Generation mode
-- Set `GENERATION_MODE=mlsharp` (any value other than `mock`) to run real `sharp predict`.
-- Default remains `mock` for development without the checkpoint loaded.
+- Generation is always real `ml-sharp`.
+- Server fails fast at startup if runtime is not ready:
+  - `ML_SHARP_BIN_NOT_EXECUTABLE`
+  - `ML_SHARP_CHECKPOINT_NOT_READABLE`
 - Config keys: `mlSharpBin` (`.venv-mlsharp-311/bin/sharp`), `mlSharpCheckpointPath` (`assets/models/sharp_2572gikvuh.pt`).
 - Override via env: `ML_SHARP_BIN`, `ML_SHARP_CHECKPOINT`.
 
@@ -77,10 +79,7 @@ Then install remaining `ml-sharp` requirements per upstream README.
 Create `.env` (or export vars in shell):
 ```bash
 export FAL_KEY="<your_fal_key>"
-export GENERATION_MODE="mock"
 ```
-
-Keep `GENERATION_MODE=mock` until real `ml-sharp` worker is implemented.
 
 ## 5. Run server and open local links
 ```bash
@@ -104,11 +103,10 @@ Open:
    - `source/captures/cap_####/camera.json`
    - `source/captures/cap_####/delta_pose.json`
 
-## 7. Next implementation step (after network)
-To actually use `ml-sharp` during generation, implement in server:
-- Replace mock generation internals in `apps/server/src/lib/generation-service.ts`
-- Keep API contract unchanged (`POST/GET /api/generate`)
-- Write real manifest to `shots/<SESSION_ID>/source/scene/manifest.json`
+## 7. Runtime validation checklist
+Before starting the server, verify:
+- `.venv-mlsharp-311/bin/sharp` is executable (or set `ML_SHARP_BIN`)
+- `assets/models/sharp_2572gikvuh.pt` exists/readable (or set `ML_SHARP_CHECKPOINT`)
 
 ## Troubleshooting
 - If `npm install` fails: retry on stable network and rerun `npm install`.

@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="favicon.png" type="image/png" />
     <title>Istanbul3D Viewer</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -308,6 +309,10 @@
         color: var(--color-text-muted);
       }
 
+      .job-row.is-loaded {
+        color: var(--color-text);
+      }
+
       .job-status {
         font-size: 10px;
         font-weight: 600;
@@ -321,7 +326,16 @@
       .job-status--pending  { color: #F59E0B; }
       .job-status--running  { color: #3B82F6; }
       .job-status--complete { color: #22C55E; }
+      .job-status--completed { color: #22C55E; }
       .job-status--failed   { color: #EF4444; }
+
+      .job-loaded-tag {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #22C55E;
+      }
 
       /* Pick-folder landing */
       .pick-landing {
@@ -478,6 +492,9 @@
                   <option>85mm</option>
                 </select>
               </div>
+              <div id="fitShotRow" class="row" style="margin-bottom:8px;display:none;">
+                <button id="fitShotCamera" type="button">Fit Shot Camera</button>
+              </div>
               <button id="resetCamera" class="icon-btn" title="Reset active camera">
                 <i class="ph ph-arrows-counter-clockwise" aria-hidden="true"></i>
               </button>
@@ -532,6 +549,7 @@
     <script type="module">
       import * as THREE from 'three';
       import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 
       const SESSION_FILE = 'istanbul3d_session.json';
       const lensFov = { '24mm': 84, '35mm': 63, '50mm': 47, '85mm': 28 };
@@ -583,8 +601,8 @@
       // ── Source helpers ─────────────────────────────────────────
 
       function getActiveSource() {
-        if (!sessionData?.sources?.length) return null;
-        return sessionData.sources.find(s => s.id === sessionData.active_source) || sessionData.sources[0];
+        if (!sessionData?.sources?.length || !sessionData.active_source) return null;
+        return sessionData.sources.find(s => s.id === sessionData.active_source) || null;
       }
 
       async function nextSourceId(sourceDir) {
@@ -602,9 +620,12 @@
         const nameEl = document.getElementById('refFileName');
         const dimsEl = document.getElementById('refFileDims');
         sel.innerHTML = '';
-        if (!sessionData?.sources?.length) {
-          sel.innerHTML = '<option value="">Select image</option>';
-        } else {
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select image';
+        if (!sessionData?.active_source) placeholder.selected = true;
+        sel.appendChild(placeholder);
+        if (sessionData?.sources?.length) {
           sessionData.sources.forEach(s => {
             const opt = document.createElement('option');
             opt.value = s.id;
@@ -621,6 +642,15 @@
         const active = getActiveSource();
         nameEl.textContent = active ? active.filename : '';
         dimsEl.style.display = 'none';
+      }
+
+      async function loadSourceImageById(sourceId) {
+        const source = sessionData?.sources?.find(s => s.id === sourceId);
+        if (!source || !sessionDirHandle) return null;
+        const sourceDir = await sessionDirHandle.getDirectoryHandle('source');
+        const srcDir = await sourceDir.getDirectoryHandle(source.id);
+        const fileHandle = await srcDir.getFileHandle(source.filename);
+        return fileHandle.getFile();
       }
 
       async function migrateLegacySession() {
@@ -702,6 +732,7 @@
             created_at: new Date().toISOString(),
             sources: [],
             active_source: null,
+            active_loaded_job_id: null,
             jobs: []
           };
 
@@ -716,15 +747,37 @@
       }
 
       function activateSession(message) {
+        sessionData.active_source = null;
         document.getElementById('sessionDisplay').textContent = sessionData.session_id;
         renderSourceSelect();
         renderJobList();
         setUIState('ready');
         initScene();
+        clearGeneratedScene();
+        setImagePlane(null);
+        if (sessionData.jobs?.some(j => j.status !== 'failed' && j.status !== 'completed' && j.status !== 'complete')) {
+          startAutoPoll();
+        }
         log(message || 'Session ready.');
       }
 
       // ── Job list ──────────────────────────────────────────────
+
+      function isCompletedStatus(status) {
+        return status === 'completed' || status === 'complete';
+      }
+
+      function upsertLocalJob(partialJob, fallback = {}) {
+        if (!partialJob?.job_id) return null;
+        const existing = sessionData.jobs.find(j => j.job_id === partialJob.job_id);
+        if (existing) {
+          Object.assign(existing, fallback, partialJob);
+          return existing;
+        }
+        const created = { ...fallback, ...partialJob };
+        sessionData.jobs.push(created);
+        return created;
+      }
 
       function renderJobList() {
         const el = document.getElementById('jobList');
@@ -734,20 +787,449 @@
           return;
         }
         el.innerHTML = [...sessionData.jobs].reverse().map(j =>
-          `<div class="job-row">
+          `<div class="job-row${loadedGeneratedJobId === j.job_id ? ' is-loaded' : ''}">
             <span>${j.job_id}</span>
             <span class="job-status job-status--${j.status}">${j.status}</span>
+            <span class="typography-caption">${typeof j.progress_percent === 'number' ? `${j.progress_percent}%` : ''}</span>
+            <span class="typography-caption">${j.stage || ''}</span>
             <span class="typography-caption">${j.started_at ? new Date(j.started_at).toLocaleTimeString() : ''}</span>
+            ${loadedGeneratedJobId === j.job_id ? '<span class="job-loaded-tag">Loaded</span>' : ''}
+            ${isCompletedStatus(j.status)
+              ? `<button class="icon-btn load-job-btn" data-job-id="${j.job_id}" title="Load output">Load Output</button>`
+              : ''}
+            ${j.status === 'queued' || j.status === 'running'
+              ? `<button class="icon-btn cancel-job-btn" data-job-id="${j.job_id}" title="Cancel job"><i class="ph ph-x" aria-hidden="true"></i></button>`
+              : ''}
           </div>`
         ).join('');
+      }
+
+      async function pollLatestJob({ quietIfNone = false } = {}) {
+        const activeJob = [...sessionData.jobs].reverse()
+          .find(j => j.status !== 'complete' && j.status !== 'failed' && j.status !== 'completed');
+        if (!activeJob) {
+          if (!quietIfNone) log('No active jobs to poll.');
+          return null;
+        }
+        const res = await fetch(
+          `/api/generate/${activeJob.job_id}?session_id=${encodeURIComponent(sessionData.session_id)}`
+        );
+        const data = await readJsonResponse(res, 'Poll generation');
+        activeJob.status = data.status || activeJob.status;
+        if (typeof data.progress_percent === 'number') activeJob.progress_percent = data.progress_percent;
+        if (data.stage) activeJob.stage = data.stage;
+        if (data.scene_manifest_path) activeJob.scene_manifest_path = data.scene_manifest_path;
+        if (Array.isArray(data.logs_tail)) activeJob.logs_tail = data.logs_tail;
+        if (data.error) activeJob.error = data.error;
+        activeJob.polled_at = new Date().toISOString();
+        await writeSessionFile();
+        renderJobList();
+        if (Array.isArray(data.logs_tail) && data.logs_tail.length) {
+          const tail = data.logs_tail.slice(-20).join('\n');
+          log(`[${activeJob.job_id}] ${data.stage || activeJob.stage || ''} ${typeof data.progress_percent === 'number' ? `${data.progress_percent}%` : ''}\n${tail}`);
+        }
+        if (isCompletedStatus(activeJob.status) && activeJob.scene_manifest_path) {
+          try {
+            await playCompletionSound(activeJob.job_id);
+            await loadJobOutput(activeJob.job_id, { quiet: true });
+          } catch (err) {
+            log({ error: String(err) });
+          }
+        }
+        return data;
       }
 
       // ── Three.js scene ────────────────────────────────────────
 
       let renderer, scene, orbitCamera, shotCamera, cameraHelper, controls;
       let imagePlane = null;
+      let generatedSceneObject = null;
+      let loadedGeneratedJobId = null;
+      const notifiedCompletedJobs = new Set();
       let sceneReady = false;
       const orbitTarget = new THREE.Vector3(0, 0, 0);
+      let autoPollTimer = null;
+      const plyLoader = new PLYLoader();
+      let completionAudioContext = null;
+
+      function stopAutoPoll() {
+        if (autoPollTimer) {
+          clearInterval(autoPollTimer);
+          autoPollTimer = null;
+        }
+      }
+
+      function startAutoPoll() {
+        stopAutoPoll();
+        autoPollTimer = setInterval(async () => {
+          try {
+            const data = await pollLatestJob({ quietIfNone: true });
+            if (!data) {
+              stopAutoPoll();
+              return;
+            }
+            if (data.status === 'completed' || data.status === 'failed') {
+              stopAutoPoll();
+              log(data);
+            }
+          } catch (err) {
+            stopAutoPoll();
+            log({ error: String(err) });
+          }
+        }, 1000);
+      }
+
+      function toAssetUrl(assetPath) {
+        const normalized = String(assetPath || '').replace(/^\/+/, '');
+        return `/${normalized.split('/').map(encodeURIComponent).join('/')}`;
+      }
+
+      async function ensureCompletionAudioContext() {
+        if (!window.AudioContext && !window.webkitAudioContext) return null;
+        if (!completionAudioContext) {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          completionAudioContext = new Ctx();
+        }
+        if (completionAudioContext.state === 'suspended') {
+          try { await completionAudioContext.resume(); } catch { /* ignore */ }
+        }
+        return completionAudioContext;
+      }
+
+      async function playCompletionSound(jobId) {
+        if (!jobId || notifiedCompletedJobs.has(jobId)) return;
+        notifiedCompletedJobs.add(jobId);
+        const ctx = await ensureCompletionAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(1320, now + 0.18);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.24);
+      }
+
+      function ensureVertexColors(geometry) {
+        if (geometry.hasAttribute('color')) return true;
+
+        const dc0 = geometry.getAttribute('f_dc_0');
+        const dc1 = geometry.getAttribute('f_dc_1');
+        const dc2 = geometry.getAttribute('f_dc_2');
+        if (!dc0 || !dc1 || !dc2) return false;
+
+        const count = Math.min(dc0.count, dc1.count, dc2.count);
+        const colors = new Float32Array(count * 3);
+        // SH DC term -> approximate display RGB used by 3DGS viewers.
+        const SH_C0 = 0.28209479177387814;
+        for (let i = 0; i < count; i += 1) {
+          const r = Math.max(0, Math.min(1, 0.5 + SH_C0 * dc0.getX(i)));
+          const g = Math.max(0, Math.min(1, 0.5 + SH_C0 * dc1.getX(i)));
+          const b = Math.max(0, Math.min(1, 0.5 + SH_C0 * dc2.getX(i)));
+          const idx = i * 3;
+          colors[idx] = r;
+          colors[idx + 1] = g;
+          colors[idx + 2] = b;
+        }
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        return true;
+      }
+
+      function findHeaderEndIndex(bytes) {
+        const end1 = [101, 110, 100, 95, 104, 101, 97, 100, 101, 114, 10]; // end_header\n
+        const end2 = [101, 110, 100, 95, 104, 101, 97, 100, 101, 114, 13, 10]; // end_header\r\n
+        outer1: for (let i = 0; i <= bytes.length - end1.length; i += 1) {
+          for (let j = 0; j < end1.length; j += 1) if (bytes[i + j] !== end1[j]) continue outer1;
+          return i + end1.length;
+        }
+        outer2: for (let i = 0; i <= bytes.length - end2.length; i += 1) {
+          for (let j = 0; j < end2.length; j += 1) if (bytes[i + j] !== end2[j]) continue outer2;
+          return i + end2.length;
+        }
+        return -1;
+      }
+
+      async function loadMlSharpGeometry(plyUrl) {
+        const response = await fetch(plyUrl);
+        if (!response.ok) throw new Error(`Failed to load PLY (${response.status})`);
+        const buffer = await response.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        const headerEnd = findHeaderEndIndex(bytes);
+        if (headerEnd < 0) return null;
+
+        const header = new TextDecoder().decode(bytes.subarray(0, headerEnd));
+        if (!header.includes('format binary_little_endian 1.0')) return null;
+        if (!header.includes('property float f_dc_0') || !header.includes('property float f_dc_1') || !header.includes('property float f_dc_2')) {
+          return null;
+        }
+
+        const lines = header.split(/\r?\n/);
+        let vertexCount = 0;
+        let inVertex = false;
+        const props = [];
+        for (const lineRaw of lines) {
+          const line = lineRaw.trim();
+          if (!line) continue;
+          if (line.startsWith('element ')) {
+            const parts = line.split(/\s+/);
+            inVertex = parts[1] === 'vertex';
+            if (inVertex) vertexCount = Number(parts[2] || 0);
+            continue;
+          }
+          if (inVertex && line.startsWith('property ')) {
+            const parts = line.split(/\s+/);
+            if (parts.length >= 3) props.push({ type: parts[1], name: parts[2] });
+            continue;
+          }
+          if (line === 'end_header') break;
+        }
+        if (!vertexCount || !props.length) return null;
+
+        const typeSizes = { float: 4, double: 8, uchar: 1, uint: 4, int: 4, short: 2, ushort: 2 };
+        let stride = 0;
+        const offsets = new Map();
+        for (const p of props) {
+          offsets.set(p.name, { offset: stride, type: p.type });
+          const size = typeSizes[p.type];
+          if (!size) return null;
+          stride += size;
+        }
+
+        const x = offsets.get('x');
+        const y = offsets.get('y');
+        const z = offsets.get('z');
+        const f0 = offsets.get('f_dc_0');
+        const f1 = offsets.get('f_dc_1');
+        const f2 = offsets.get('f_dc_2');
+        if (!x || !y || !z || !f0 || !f1 || !f2) return null;
+        if (x.type !== 'float' || y.type !== 'float' || z.type !== 'float' || f0.type !== 'float' || f1.type !== 'float' || f2.type !== 'float') return null;
+
+        const SH_C0 = 0.28209479177387814;
+        const positions = new Float32Array(vertexCount * 3);
+        const colors = new Float32Array(vertexCount * 3);
+        const dv = new DataView(buffer, headerEnd);
+        for (let i = 0; i < vertexCount; i += 1) {
+          const base = i * stride;
+          const px = dv.getFloat32(base + x.offset, true);
+          const py = dv.getFloat32(base + y.offset, true);
+          const pz = dv.getFloat32(base + z.offset, true);
+          const dc0 = dv.getFloat32(base + f0.offset, true);
+          const dc1 = dv.getFloat32(base + f1.offset, true);
+          const dc2 = dv.getFloat32(base + f2.offset, true);
+          const idx = i * 3;
+          positions[idx] = px;
+          positions[idx + 1] = py;
+          positions[idx + 2] = pz;
+          colors[idx] = Math.max(0, Math.min(1, 0.5 + SH_C0 * dc0));
+          colors[idx + 1] = Math.max(0, Math.min(1, 0.5 + SH_C0 * dc1));
+          colors[idx + 2] = Math.max(0, Math.min(1, 0.5 + SH_C0 * dc2));
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        return geometry;
+      }
+
+      function normalizeGeneratedGeometry(geometry) {
+        const pos = geometry.getAttribute('position');
+        if (!pos) return;
+
+        // Convert CV-style camera coords to viewer coords: +Z forward -> -Z, Y down -> Y up.
+        for (let i = 0; i < pos.count; i += 1) {
+          const x = pos.getX(i);
+          const y = -pos.getY(i);
+          const z = -pos.getZ(i);
+          pos.setXYZ(i, x, y, z);
+        }
+        const sampleStep = Math.max(1, Math.floor(pos.count / 20000));
+        const xs = [];
+        const ys = [];
+        const zs = [];
+        for (let i = 0; i < pos.count; i += sampleStep) {
+          xs.push(pos.getX(i));
+          ys.push(pos.getY(i));
+          zs.push(pos.getZ(i));
+        }
+        const q = (arr, p) => {
+          if (!arr.length) return 0;
+          const sorted = [...arr].sort((a, b) => a - b);
+          const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))));
+          return sorted[idx];
+        };
+        // Robust center/grounding avoids extreme outliers dominating placement.
+        const centerX = (q(xs, 0.02) + q(xs, 0.98)) * 0.5;
+        const centerZ = (q(zs, 0.02) + q(zs, 0.98)) * 0.5;
+        const groundY = q(ys, 0.01);
+        for (let i = 0; i < pos.count; i += 1) {
+          pos.setXYZ(
+            i,
+            pos.getX(i) - centerX,
+            pos.getY(i) - groundY,
+            pos.getZ(i) - centerZ
+          );
+        }
+        pos.needsUpdate = true;
+      }
+
+      async function loadGeneratedSceneFromJob(job) {
+        if (!scene || !job?.scene_manifest_path || loadedGeneratedJobId === job.job_id) return;
+
+        const manifestRes = await fetch(toAssetUrl(job.scene_manifest_path));
+        if (!manifestRes.ok) {
+          throw new Error(`Failed to load scene manifest (${manifestRes.status})`);
+        }
+        const manifest = await manifestRes.json();
+        if (!manifest?.ply_path) {
+          throw new Error('Scene manifest missing ply_path.');
+        }
+
+        const plyUrl = toAssetUrl(manifest.ply_path);
+        let geometry = await loadMlSharpGeometry(plyUrl);
+        if (!geometry) {
+          geometry = await plyLoader.loadAsync(plyUrl);
+          ensureVertexColors(geometry);
+        }
+        normalizeGeneratedGeometry(geometry);
+        geometry.computeBoundingSphere();
+        const hasVertexColors = geometry.hasAttribute('color');
+
+        const material = new THREE.PointsMaterial({
+          size: 0.01,
+          vertexColors: hasVertexColors,
+          color: hasVertexColors ? 0xffffff : 0xb8d6ff
+        });
+        const points = new THREE.Points(geometry, material);
+
+        if (generatedSceneObject) {
+          scene.remove(generatedSceneObject);
+          generatedSceneObject.geometry.dispose();
+          generatedSceneObject.material.dispose();
+        }
+        generatedSceneObject = points;
+        scene.add(generatedSceneObject);
+        loadedGeneratedJobId = job.job_id;
+
+        const box = new THREE.Box3().setFromObject(generatedSceneObject);
+        const center = box.getCenter(new THREE.Vector3());
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        if (Number.isFinite(sphere.radius) && sphere.radius > 0) {
+          orbitCamera.position.set(
+            center.x + sphere.radius * 2.2,
+            center.y + sphere.radius * 1.2,
+            center.z + sphere.radius * 2.2
+          );
+          orbitCamera.lookAt(center);
+          orbitTarget.copy(center);
+          controls.target.copy(center);
+          controls.update();
+          fitShotCameraToGeneratedScene({ resetDelta: true });
+        }
+      }
+
+      function clearGeneratedScene() {
+        if (!scene) return;
+        if (generatedSceneObject) {
+          scene.remove(generatedSceneObject);
+          generatedSceneObject.geometry.dispose();
+          generatedSceneObject.material.dispose();
+          generatedSceneObject = null;
+        }
+        loadedGeneratedJobId = null;
+      }
+
+      function setShotBaselineFromCurrent() {
+        if (!shotCamera) return;
+        SHOT_INITIAL_POS.copy(shotCamera.position);
+        SHOT_INITIAL_ROT.copy(shotCamera.rotation);
+      }
+
+      function fitShotCameraToGeneratedScene({ resetDelta = true } = {}) {
+        if (!shotCamera || !generatedSceneObject) return false;
+        const pos = generatedSceneObject.geometry?.getAttribute('position');
+        if (!pos) return false;
+        const sampleStep = Math.max(1, Math.floor(pos.count / 20000));
+        const samples = [];
+        for (let i = 0; i < pos.count; i += sampleStep) {
+          samples.push({ x: pos.getX(i), y: pos.getY(i), z: pos.getZ(i) });
+        }
+        if (!samples.length) return false;
+        const q = (arr, p) => {
+          const sorted = [...arr].sort((a, b) => a - b);
+          const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))));
+          return sorted[idx];
+        };
+        const zThreshold = q(samples.map(s => s.z), 0.82);
+        const focus = samples.filter(s => s.z >= zThreshold);
+        const focusSamples = focus.length > 200 ? focus : samples;
+        const xs = focusSamples.map(s => s.x);
+        const ys = focusSamples.map(s => s.y);
+        const zs = focusSamples.map(s => s.z);
+        const min = new THREE.Vector3(q(xs, 0.05), q(ys, 0.05), q(zs, 0.05));
+        const max = new THREE.Vector3(q(xs, 0.95), q(ys, 0.95), q(zs, 0.95));
+        const center = min.clone().add(max).multiplyScalar(0.5);
+        const size = max.clone().sub(min);
+        const sphere = new THREE.Sphere(center, Math.max(size.x, size.y, size.z) * 0.6);
+        if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) return false;
+
+        const fovRad = THREE.MathUtils.degToRad(shotCamera.fov);
+        const distance = Math.max(sphere.radius / Math.tan(fovRad / 2), sphere.radius * 1.5) * 1.08;
+        const viewDir = new THREE.Vector3(0.58, 0.22, 1).normalize();
+        shotCamera.position.copy(center).addScaledVector(viewDir, distance);
+        shotCamera.lookAt(center);
+        shotCamera.updateProjectionMatrix();
+
+        if (getActiveCameraMode() === 'shot' && controls) {
+          controls.object = shotCamera;
+          controls.target.copy(center);
+          controls.update();
+        }
+        cameraHelper.update();
+        if (resetDelta) setShotBaselineFromCurrent();
+        return true;
+      }
+
+      async function loadJobOutput(jobId, { quiet = false } = {}) {
+        const localJob = (sessionData.jobs || []).find(j => j.job_id === jobId);
+        if (!localJob) {
+          if (!quiet) log(`Job ${jobId} not found in current session.`);
+          return;
+        }
+        if (!isCompletedStatus(localJob.status)) {
+          if (!quiet) log(`Job ${jobId} is ${localJob.status}; only completed jobs can be loaded.`);
+          return;
+        }
+
+        if (!localJob.scene_manifest_path) {
+          const statusRes = await fetch(
+            `/api/generate/${encodeURIComponent(jobId)}?session_id=${encodeURIComponent(sessionData.session_id)}`
+          );
+          const statusData = await readJsonResponse(statusRes, 'Load job output');
+          upsertLocalJob(statusData);
+        }
+
+        if (!localJob.scene_manifest_path) {
+          throw new Error(`Job ${jobId} has no scene_manifest_path.`);
+        }
+
+        if (sessionData.active_loaded_job_id === jobId && loadedGeneratedJobId === jobId) {
+          if (!quiet) log(`[${jobId}] already loaded.`);
+          return;
+        }
+
+        await loadGeneratedSceneFromJob(localJob);
+        sessionData.active_loaded_job_id = jobId;
+        localJob.loaded_at = new Date().toISOString();
+        await writeSessionFile();
+        renderJobList();
+        if (!quiet) log(`[${jobId}] loaded generated scene in 3D viewport.`);
+      }
 
       function getActiveCameraMode() {
         return document.getElementById('activeCamera')?.value === 'shot' ? 'shot' : 'orbit';
@@ -821,7 +1303,11 @@
 
         const deltaSection = document.getElementById('deltaSection');
         const lensRow = document.getElementById('lensRow');
+        const fitShotRow = document.getElementById('fitShotRow');
+        const fitShotButton = document.getElementById('fitShotCamera');
         lensRow.style.display = mode === 'shot' ? '' : 'none';
+        fitShotRow.style.display = mode === 'shot' ? '' : 'none';
+        fitShotButton.disabled = !generatedSceneObject;
         deltaSection.style.display = mode === 'shot' ? '' : 'none';
         if (mode === 'shot') {
           const delta = getShotDeltaPose();
@@ -985,6 +1471,21 @@
         };
       }
 
+      async function readJsonResponse(res, label) {
+        const raw = await res.text();
+        let data;
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          const snippet = raw.slice(0, 180).replace(/\s+/g, ' ').trim();
+          throw new Error(`${label} returned non-JSON (${res.status}): ${snippet || '(empty response)'}`);
+        }
+        if (!res.ok) {
+          throw new Error(data?.detail || data?.error || `${label} failed with status ${res.status}`);
+        }
+        return data;
+      }
+
       // ── Event handlers ────────────────────────────────────────
 
       document.getElementById('pickDirInit').onclick = pickFolder;
@@ -999,27 +1500,54 @@
 
       document.getElementById('start').onclick = async () => {
         try {
+          await ensureCompletionAudioContext();
           const activeSource = getActiveSource();
           if (!activeSource) { log('No source selected. Upload an image first.'); return; }
+
+          const sourceFile = await loadSourceImageById(activeSource.id);
+          if (!sourceFile) { log('Selected source file is missing. Re-select or upload the image again.'); return; }
+
+          const syncForm = new FormData();
+          syncForm.append('session_id', sessionData.session_id);
+          syncForm.append('source_id', activeSource.id);
+          syncForm.append('filename', activeSource.filename);
+          syncForm.append('reference', sourceFile, activeSource.filename);
+          const syncRes = await fetch('/api/generate/sync-reference', {
+            method: 'POST',
+            body: syncForm
+          });
+          const syncData = await readJsonResponse(syncRes, 'Sync reference');
+          if (!syncData.reference_image_path) {
+            throw new Error('Sync reference response missing reference_image_path.');
+          }
+
           const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
               session_id: sessionData.session_id,
-              reference_image_path: `shots/${sessionData.session_id}/source/${activeSource.id}/${activeSource.filename}`,
+              reference_image_path: syncData.reference_image_path,
               force_regenerate: false
             })
           });
-          const data = await res.json();
+          const data = await readJsonResponse(res, 'Start generation');
           if (data.job_id) {
-            sessionData.jobs.push({
+            const job = upsertLocalJob({
               job_id: data.job_id,
               status: data.status || 'pending',
+              stage: data.stage || 'queued',
+              progress_percent: typeof data.progress_percent === 'number' ? data.progress_percent : 0,
+              logs_tail: Array.isArray(data.logs_tail) ? data.logs_tail : [],
               started_at: new Date().toISOString(),
               polled_at: null
             });
             await writeSessionFile();
             renderJobList();
+            if (job?.status && isCompletedStatus(job.status)) {
+              await loadJobOutput(job.job_id, { quiet: true });
+            } else {
+              startAutoPoll();
+            }
           }
           log(data);
         } catch (err) {
@@ -1028,18 +1556,47 @@
       };
 
       document.getElementById('poll').onclick = async () => {
-        const activeJob = [...sessionData.jobs].reverse()
-          .find(j => j.status !== 'complete' && j.status !== 'failed');
-        if (!activeJob) { log('No active jobs to poll.'); return; }
+        try {
+          const data = await pollLatestJob();
+          if (!data) return;
+          if (data.status !== 'completed' && data.status !== 'failed') startAutoPoll();
+          log(data);
+        } catch (err) {
+          log({ error: String(err) });
+        }
+      };
+
+      document.getElementById('jobList').onclick = async (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const loadBtn = target.closest('.load-job-btn');
+        if (loadBtn) {
+          const jobId = loadBtn.getAttribute('data-job-id');
+          if (!jobId) return;
+          try {
+            await loadJobOutput(jobId);
+          } catch (err) {
+            log({ error: String(err) });
+          }
+          return;
+        }
+
+        const cancelBtn = target.closest('.cancel-job-btn');
+        if (!cancelBtn) return;
+        const jobId = cancelBtn.getAttribute('data-job-id');
+        if (!jobId) return;
+        if (!confirm(`Cancel generation job ${jobId}?`)) return;
         try {
           const res = await fetch(
-            `/api/generate/${activeJob.job_id}?session_id=${encodeURIComponent(sessionData.session_id)}`
+            `/api/generate/${encodeURIComponent(jobId)}/cancel?session_id=${encodeURIComponent(sessionData.session_id)}`,
+            { method: 'POST' }
           );
-          const data = await res.json();
-          activeJob.status = data.status || activeJob.status;
-          activeJob.polled_at = new Date().toISOString();
+          const data = await readJsonResponse(res, 'Cancel generation');
+          const localJob = sessionData.jobs.find(j => j.job_id === jobId);
+          if (localJob) Object.assign(localJob, data);
           await writeSessionFile();
           renderJobList();
+          if (!sessionData.jobs.some(j => j.status === 'queued' || j.status === 'running')) stopAutoPoll();
           log(data);
         } catch (err) {
           log({ error: String(err) });
@@ -1048,16 +1605,42 @@
 
       document.getElementById('sourceSelect').onchange = async () => {
         const sel = document.getElementById('sourceSelect');
+        const nameEl = document.getElementById('refFileName');
+        const dimsEl = document.getElementById('refFileDims');
         if (sel.value === '__new__') {
           document.getElementById('refFile').click();
           // Reset to previous selection while file picker is open
           sel.value = sessionData.active_source || '';
           return;
         }
-        if (!sel.value) return;
-        sessionData.active_source = sel.value;
-        await writeSessionFile();
-        renderSourceSelect();
+        if (!sel.value) {
+          sessionData.active_source = null;
+          await writeSessionFile();
+          renderSourceSelect();
+          setImagePlane(null);
+          nameEl.textContent = '';
+          dimsEl.style.display = 'none';
+          return;
+        }
+        try {
+          const file = await loadSourceImageById(sel.value);
+          sessionData.active_source = sel.value;
+          await writeSessionFile();
+          renderSourceSelect();
+          setImagePlane(file);
+          nameEl.textContent = file.name;
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => {
+            dimsEl.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+            dimsEl.style.display = '';
+            URL.revokeObjectURL(url);
+          };
+          img.onerror = () => { dimsEl.style.display = 'none'; URL.revokeObjectURL(url); };
+          img.src = url;
+        } catch (err) {
+          log({ error: String(err) });
+        }
       };
 
       document.getElementById('refFile').onchange = async () => {
@@ -1132,6 +1715,14 @@
       };
       document.getElementById('resetCamera').onclick = () => {
         resetActiveCamera();
+        updateCameraPanel();
+      };
+      document.getElementById('fitShotCamera').onclick = () => {
+        if (!fitShotCameraToGeneratedScene({ resetDelta: true })) {
+          log('Load output first to fit the shot camera.');
+          return;
+        }
+        setControlsCamera('shot');
         updateCameraPanel();
       };
 

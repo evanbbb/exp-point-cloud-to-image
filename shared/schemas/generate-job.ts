@@ -26,6 +26,9 @@ export const generateJobSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   scene_manifest_path: z.string().optional(),
+  logs_tail: z.array(z.string()).optional(),
+  cancel_requested_at: z.string().optional(),
+  cancelled_at: z.string().optional(),
   error: z
     .object({
       code: z.string(),
