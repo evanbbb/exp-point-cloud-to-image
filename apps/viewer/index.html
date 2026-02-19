@@ -89,6 +89,7 @@
       .typography-h1 { font-size: 20px; font-weight: 700; color: var(--color-text); margin-bottom: 12px; }
       .typography-body-muted { font-size: 11px; color: var(--color-text-muted); line-height: 1.7; margin-bottom: 24px; }
       .typography-label { font-size: 11px; color: var(--color-text-muted); }
+      .typography-caption { font-size: 11px; color: var(--color-text-muted); }
 
       /* Controls */
       .row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
@@ -142,7 +143,7 @@
         color: #fff;
       }
 
-      button.primary:hover { border-color: var(--color-accent); opacity: 0.85; }
+      button.primary:hover { opacity: 0.85; }
 
       canvas {
         border: 1px solid var(--color-border);
@@ -163,6 +164,90 @@
         color: var(--color-text-muted);
         margin-top: 12px;
       }
+
+      /* Confirm card */
+      .confirm-card {
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: #303030;
+        padding: 24px;
+        max-width: 480px;
+        margin-top: 24px;
+      }
+
+      .confirm-card p { margin-bottom: 16px; }
+
+      /* Session header in ready state */
+      .session-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 20px;
+      }
+
+      .session-id-display {
+        font-size: 11px;
+        color: var(--color-text-muted);
+        margin-top: 4px;
+      }
+
+      .session-id-display span {
+        color: var(--color-text);
+        font-weight: 600;
+      }
+
+      /* Section divider */
+      .section {
+        border-top: 1px solid var(--color-border);
+        margin-top: 20px;
+        padding-top: 16px;
+      }
+
+      .section-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+      }
+
+      /* Job list */
+      .job-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+
+      .job-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 11px;
+        color: var(--color-text-muted);
+      }
+
+      .job-status {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 2px 6px;
+        border-radius: 3px;
+        border: 1px solid currentColor;
+      }
+
+      .job-status--pending  { color: #F59E0B; }
+      .job-status--running  { color: #3B82F6; }
+      .job-status--complete { color: #22C55E; }
+      .job-status--failed   { color: #EF4444; }
+
+      /* Pick-folder landing */
+      .pick-landing {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        margin-top: 48px;
+      }
+
+      .pick-landing p { max-width: 440px; }
     </style>
   </head>
   <body>
@@ -177,81 +262,217 @@
     </nav>
 
     <main class="canvas-area">
-      <h1 class="typography-h1">Viewer</h1>
-      <p class="typography-body-muted">
-        <strong style="color:var(--color-text);">Step 1 of 2.</strong> Drop a reference photo to generate a 3D Gaussian splat scene.
-        Navigate to a new camera angle using the lens and dolly controls, then hit
-        <em>Capture View</em> to export that frame. Each capture saves a target image and
-        camera data for repair. Take your captures to the
-        <a href="/repair" style="color:var(--color-accent);">Repair app</a> when ready.
-      </p>
 
-      <div class="row">
-        <span class="label">Session</span>
-        <input id="sessionId" placeholder="SESSION_YYYYMMDD_HHMMSS" />
-        <button id="start">Start Generation</button>
-        <button id="poll">Poll Status</button>
-        <input id="jobId" placeholder="job id" />
+      <!-- ── State: pick ── -->
+      <div id="state-pick">
+        <h1 class="typography-h1">Viewer</h1>
+        <div class="pick-landing">
+          <p class="typography-body-muted">
+            <strong style="color:var(--color-text);">Step 1 of 2.</strong>
+            Select a folder on your machine to use as the working session.
+            The app will create a session file inside it and store all captures, job IDs, and metadata there.
+          </p>
+          <button id="pickDirInit" class="primary">Pick Session Folder</button>
+        </div>
       </div>
 
-      <div class="row">
-        <button id="pickDir">Pick Session Folder</button>
-        <span id="dirState" class="typography-label">No folder selected</span>
+      <!-- ── State: confirm new folder ── -->
+      <div id="state-confirm" style="display:none">
+        <h1 class="typography-h1">Viewer</h1>
+        <div class="confirm-card">
+          <p class="typography-body-muted">
+            <strong id="confirmFolderName" style="color:var(--color-text);"></strong>
+            doesn't have an Istanbul3D session file yet.
+            Initialize it as a session folder?
+          </p>
+          <div class="row">
+            <button id="btnInit" class="primary">Initialize</button>
+            <button id="btnCancel">Pick Different Folder</button>
+          </div>
+        </div>
       </div>
 
-      <div class="row">
-        <span class="label">Reference</span>
-        <input id="refFile" type="file" accept="image/png,image/jpeg" />
-        <button id="initRef">Initialize reference.png</button>
+      <!-- ── State: ready ── -->
+      <div id="state-ready" style="display:none">
+        <div class="session-header">
+          <div>
+            <h1 class="typography-h1">Viewer</h1>
+            <p class="session-id-display">Session: <span id="sessionDisplay"></span></p>
+          </div>
+          <button id="pickDirSwitch">Switch Folder</button>
+        </div>
+
+        <p class="typography-body-muted">
+          <strong style="color:var(--color-text);">Step 1 of 2.</strong>
+          Initialize a reference photo, adjust the camera, then hit
+          <em>Capture View</em> to export a target frame. Take your captures to the
+          <a href="/repair" style="color:var(--color-accent);">Repair app</a> when ready.
+        </p>
+
+        <div class="row">
+          <span class="label">Reference</span>
+          <input id="refFile" type="file" accept="image/png,image/jpeg" />
+          <button id="initRef">Initialize reference.png</button>
+        </div>
+
+        <canvas id="scene" width="960" height="540"></canvas>
+
+        <div class="row">
+          <span class="label">Lens</span>
+          <select id="lensPreset">
+            <option>24mm</option>
+            <option>35mm</option>
+            <option selected>50mm</option>
+            <option>85mm</option>
+          </select>
+
+          <span class="label">Dolly Z</span>
+          <input id="dolly" type="range" min="-2" max="2" step="0.01" value="0" />
+          <span id="dollyValue" class="typography-label">0.00</span>
+
+          <button id="capture" class="primary">Capture View</button>
+        </div>
+
+        <div class="section">
+          <div class="section-label">Generation</div>
+          <div class="row">
+            <button id="start">Start Generation</button>
+            <button id="poll">Poll Latest Job</button>
+          </div>
+          <div id="jobList" class="job-list">
+            <span class="typography-caption">No generation jobs yet.</span>
+          </div>
+        </div>
+
+        <pre id="out">Ready.</pre>
       </div>
 
-      <canvas id="scene" width="960" height="540"></canvas>
-
-      <div class="row">
-        <span class="label">Lens</span>
-        <select id="lensPreset">
-          <option>24mm</option>
-          <option>35mm</option>
-          <option selected>50mm</option>
-          <option>85mm</option>
-        </select>
-
-        <span class="label">Dolly Z</span>
-        <input id="dolly" type="range" min="-2" max="2" step="0.01" value="0" />
-        <span id="dollyValue" class="typography-label">0.00</span>
-
-        <button id="capture" class="primary">Capture View</button>
-      </div>
-
-      <pre id="out">Ready.</pre>
     </main>
 
     <script>
-      const lensFov = {
-        '24mm': 84,
-        '35mm': 63,
-        '50mm': 47,
-        '85mm': 28
-      };
-
-      const out = document.getElementById('out');
-      const sessionId = document.getElementById('sessionId');
-      const jobId = document.getElementById('jobId');
-      const lensPreset = document.getElementById('lensPreset');
-      const dolly = document.getElementById('dolly');
-      const dollyValue = document.getElementById('dollyValue');
-      const dirState = document.getElementById('dirState');
-      const canvas = document.getElementById('scene');
-      const ctx = canvas.getContext('2d');
+      const SESSION_FILE = 'istanbul3d_session.json';
+      const lensFov = { '24mm': 84, '35mm': 63, '50mm': 47, '85mm': 28 };
 
       let sessionDirHandle = null;
-      let referenceZ = 0;
+      let sessionData = null;
+      const referenceZ = 0;
 
-      function log(value) {
-        out.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+      // ── UI state ──────────────────────────────────────────────
+
+      function setUIState(state) {
+        document.getElementById('state-pick').style.display    = state === 'pick'    ? '' : 'none';
+        document.getElementById('state-confirm').style.display = state === 'confirm' ? '' : 'none';
+        document.getElementById('state-ready').style.display   = state === 'ready'   ? '' : 'none';
       }
 
+      function log(value) {
+        const out = document.getElementById('out');
+        if (out) out.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+      }
+
+      // ── Session file helpers ───────────────────────────────────
+
+      function generateSessionId() {
+        const now = new Date();
+        const date = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+        return `SESSION_${date}_${time}`;
+      }
+
+      async function readSessionFile(dirHandle) {
+        try {
+          const fh = await dirHandle.getFileHandle(SESSION_FILE);
+          const file = await fh.getFile();
+          return JSON.parse(await file.text());
+        } catch {
+          return null;
+        }
+      }
+
+      async function writeSessionFile() {
+        const fh = await sessionDirHandle.getFileHandle(SESSION_FILE, { create: true });
+        const writable = await fh.createWritable();
+        await writable.write(JSON.stringify(sessionData, null, 2));
+        await writable.close();
+      }
+
+      // ── Folder picking ────────────────────────────────────────
+
+      async function pickFolder() {
+        if (!window.showDirectoryPicker) {
+          log('File System Access API is not available in this browser.');
+          return;
+        }
+        try {
+          const dirHandle = await window.showDirectoryPicker();
+          sessionDirHandle = dirHandle;
+          const existing = await readSessionFile(dirHandle);
+          if (existing) {
+            sessionData = existing;
+            activateSession('Loaded existing session.');
+          } else {
+            document.getElementById('confirmFolderName').textContent = dirHandle.name;
+            setUIState('confirm');
+          }
+        } catch (err) {
+          if (err.name !== 'AbortError') log({ error: String(err) });
+        }
+      }
+
+      async function initializeSession() {
+        try {
+          sessionData = {
+            session_id: generateSessionId(),
+            created_at: new Date().toISOString(),
+            reference_initialized: false,
+            jobs: []
+          };
+
+          // Create folder structure
+          const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
+          await sourceDir.getDirectoryHandle('captures', { create: true });
+
+          await writeSessionFile();
+          activateSession('Session initialized.');
+        } catch (err) {
+          log({ error: String(err) });
+        }
+      }
+
+      function activateSession(message) {
+        document.getElementById('sessionDisplay').textContent = sessionData.session_id;
+        renderJobList();
+        setUIState('ready');
+        drawMockScene();
+        log(message || 'Session ready.');
+      }
+
+      // ── Job list ──────────────────────────────────────────────
+
+      function renderJobList() {
+        const el = document.getElementById('jobList');
+        if (!el) return;
+        if (!sessionData.jobs.length) {
+          el.innerHTML = '<span class="typography-caption">No generation jobs yet.</span>';
+          return;
+        }
+        el.innerHTML = [...sessionData.jobs].reverse().map(j =>
+          `<div class="job-row">
+            <span>${j.job_id}</span>
+            <span class="job-status job-status--${j.status}">${j.status}</span>
+            <span class="typography-caption">${j.started_at ? new Date(j.started_at).toLocaleTimeString() : ''}</span>
+          </div>`
+        ).join('');
+      }
+
+      // ── Canvas ────────────────────────────────────────────────
+
       function drawMockScene() {
+        const canvas = document.getElementById('scene');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const lensPreset = document.getElementById('lensPreset');
+        const dolly = document.getElementById('dolly');
         const fov = lensFov[lensPreset.value] || 47;
         const z = Number(dolly.value);
         const w = canvas.width;
@@ -280,31 +501,24 @@
         ctx.stroke();
       }
 
-      async function getOrCreateDir(parentHandle, name) {
-        return parentHandle.getDirectoryHandle(name, { create: true });
-      }
+      // ── File helpers ──────────────────────────────────────────
 
       async function writeTextFile(dirHandle, name, content) {
-        const fileHandle = await dirHandle.getFileHandle(name, { create: true });
-        const writable = await fileHandle.createWritable();
+        const fh = await dirHandle.getFileHandle(name, { create: true });
+        const writable = await fh.createWritable();
         await writable.write(content);
         await writable.close();
       }
 
       async function writeBlobFile(dirHandle, name, blob) {
-        const fileHandle = await dirHandle.getFileHandle(name, { create: true });
-        const writable = await fileHandle.createWritable();
+        const fh = await dirHandle.getFileHandle(name, { create: true });
+        const writable = await fh.createWritable();
         await writable.write(blob);
         await writable.close();
       }
 
       async function fileExists(dirHandle, name) {
-        try {
-          await dirHandle.getFileHandle(name);
-          return true;
-        } catch {
-          return false;
-        }
+        try { await dirHandle.getFileHandle(name); return true; } catch { return false; }
       }
 
       async function nextCaptureName(capturesDirHandle) {
@@ -312,14 +526,14 @@
         for await (const [name, handle] of capturesDirHandle.entries()) {
           if (handle.kind !== 'directory') continue;
           const m = /^cap_(\d{4})$/.exec(name);
-          if (!m) continue;
-          const n = Number(m[1]);
-          if (n > max) max = n;
+          if (m && Number(m[1]) > max) max = Number(m[1]);
         }
         return `cap_${String(max + 1).padStart(4, '0')}`;
       }
 
       function getCameraJson() {
+        const canvas = document.getElementById('scene');
+        const lensPreset = document.getElementById('lensPreset');
         const fov = lensFov[lensPreset.value] || 47;
         return {
           projection: 'perspective',
@@ -333,123 +547,119 @@
       }
 
       function getDeltaPoseJson() {
+        const dolly = document.getElementById('dolly');
         const z = Number(dolly.value);
         return {
-          x: 0,
-          y: 0,
+          x: 0, y: 0,
           z: Number((z - referenceZ).toFixed(4)),
-          pitch: 0,
-          yaw: 0,
-          roll: 0,
+          pitch: 0, yaw: 0, roll: 0,
           units: 'meters',
           angles: 'degrees'
         };
       }
 
+      // ── Event handlers ────────────────────────────────────────
+
+      document.getElementById('pickDirInit').onclick = pickFolder;
+      document.getElementById('pickDirSwitch').onclick = pickFolder;
+      document.getElementById('btnCancel').onclick = () => setUIState('pick');
+      document.getElementById('btnInit').onclick = initializeSession;
+
       document.getElementById('start').onclick = async () => {
         try {
-          const body = {
-            session_id: sessionId.value,
-            reference_image_path: `shots/${sessionId.value}/source/reference.png`,
-            force_regenerate: false
-          };
           const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify({
+              session_id: sessionData.session_id,
+              reference_image_path: `shots/${sessionData.session_id}/source/reference.png`,
+              force_regenerate: false
+            })
           });
           const data = await res.json();
-          jobId.value = data.job_id || '';
+          if (data.job_id) {
+            sessionData.jobs.push({
+              job_id: data.job_id,
+              status: data.status || 'pending',
+              started_at: new Date().toISOString(),
+              polled_at: null
+            });
+            await writeSessionFile();
+            renderJobList();
+          }
           log(data);
-        } catch (error) {
-          log({ error: String(error) });
+        } catch (err) {
+          log({ error: String(err) });
         }
       };
 
       document.getElementById('poll').onclick = async () => {
+        const activeJob = [...sessionData.jobs].reverse()
+          .find(j => j.status !== 'complete' && j.status !== 'failed');
+        if (!activeJob) { log('No active jobs to poll.'); return; }
         try {
-          const res = await fetch(`/api/generate/${jobId.value}?session_id=${encodeURIComponent(sessionId.value)}`);
+          const res = await fetch(
+            `/api/generate/${activeJob.job_id}?session_id=${encodeURIComponent(sessionData.session_id)}`
+          );
           const data = await res.json();
+          activeJob.status = data.status || activeJob.status;
+          activeJob.polled_at = new Date().toISOString();
+          await writeSessionFile();
+          renderJobList();
           log(data);
-        } catch (error) {
-          log({ error: String(error) });
-        }
-      };
-
-      document.getElementById('pickDir').onclick = async () => {
-        try {
-          if (!window.showDirectoryPicker) {
-            throw new Error('File System Access API is not available in this browser.');
-          }
-          sessionDirHandle = await window.showDirectoryPicker();
-          dirState.textContent = `Selected: ${sessionDirHandle.name}`;
-          log('Session folder selected.');
-        } catch (error) {
-          log({ error: String(error) });
+        } catch (err) {
+          log({ error: String(err) });
         }
       };
 
       document.getElementById('initRef').onclick = async () => {
         try {
-          if (!sessionDirHandle) {
-            throw new Error('Select a session folder first.');
-          }
-          const fileInput = document.getElementById('refFile');
-          const file = fileInput.files?.[0];
-          if (!file) {
-            throw new Error('Choose a reference image first.');
-          }
-
-          const sourceDir = await getOrCreateDir(sessionDirHandle, 'source');
+          const file = document.getElementById('refFile').files?.[0];
+          if (!file) throw new Error('Choose a reference image first.');
+          const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
           if (await fileExists(sourceDir, 'reference.png')) {
             log('reference.png already exists in source/. Skipping copy.');
             return;
           }
-
           await writeBlobFile(sourceDir, 'reference.png', file);
+          sessionData.reference_initialized = true;
+          await writeSessionFile();
           log('reference.png copied to source/reference.png');
-        } catch (error) {
-          log({ error: String(error) });
+        } catch (err) {
+          log({ error: String(err) });
         }
       };
 
       document.getElementById('capture').onclick = async () => {
         try {
-          if (!sessionDirHandle) {
-            throw new Error('Select a session folder first.');
-          }
-
-          const sourceDir = await getOrCreateDir(sessionDirHandle, 'source');
-          const capturesDir = await getOrCreateDir(sourceDir, 'captures');
+          const canvas = document.getElementById('scene');
+          const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
+          const capturesDir = await sourceDir.getDirectoryHandle('captures', { create: true });
           const capName = await nextCaptureName(capturesDir);
-          const capDir = await getOrCreateDir(capturesDir, capName);
+          const capDir = await capturesDir.getDirectoryHandle(capName, { create: true });
 
           const targetBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-          if (!targetBlob) {
-            throw new Error('Failed to encode canvas PNG.');
-          }
+          if (!targetBlob) throw new Error('Failed to encode canvas PNG.');
 
           await writeBlobFile(capDir, 'target.png', targetBlob);
           await writeTextFile(capDir, 'camera.json', JSON.stringify(getCameraJson(), null, 2));
           await writeTextFile(capDir, 'delta_pose.json', JSON.stringify(getDeltaPoseJson(), null, 2));
 
-          log({
-            message: 'Capture exported',
-            path: `source/captures/${capName}/`,
-            files: ['target.png', 'camera.json', 'delta_pose.json']
-          });
-        } catch (error) {
-          log({ error: String(error) });
+          log({ message: 'Capture exported', path: `source/captures/${capName}/`, files: ['target.png', 'camera.json', 'delta_pose.json'] });
+        } catch (err) {
+          log({ error: String(err) });
         }
       };
 
-      lensPreset.onchange = drawMockScene;
-      dolly.oninput = () => {
-        dollyValue.textContent = Number(dolly.value).toFixed(2);
+      document.getElementById('lensPreset').onchange = drawMockScene;
+      document.getElementById('dolly').oninput = () => {
+        document.getElementById('dollyValue').textContent =
+          Number(document.getElementById('dolly').value).toFixed(2);
         drawMockScene();
       };
 
-      drawMockScene();
+      // Start in pick state
+      setUIState('pick');
     </script>
   </body>
 </html>
