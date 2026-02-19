@@ -8,6 +8,15 @@ import { cancelGeneration, getGenerationStatus, startGeneration } from "../lib/g
 import { parseSessionId, resolveWithin } from "../lib/paths";
 
 export const generateRouter = Router();
+function invalidSessionMessage(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  return ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message) ? error.message : null;
+}
+
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -46,10 +55,11 @@ generateRouter.post("/api/generate/sync-reference", upload.single("reference"), 
       reference_image_path: `shots/${sessionId}/source/${sourceId}/${filename}`
     });
   } catch (error) {
-    if (error instanceof Error && ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message)) {
-      return res.status(400).json({ error: error.message });
+    const invalidSession = invalidSessionMessage(error);
+    if (invalidSession) {
+      return res.status(400).json({ error: invalidSession });
     }
-    return res.status(500).json({ error: "SYNC_REFERENCE_FAILED", detail: error instanceof Error ? error.message : "Unknown error" });
+    return res.status(500).json({ error: "SYNC_REFERENCE_FAILED", detail: errorDetail(error) });
   }
 });
 
@@ -58,13 +68,14 @@ generateRouter.post("/api/generate", async (req, res) => {
     const payload = await startGeneration(req.body ?? {});
     return res.status(202).json(payload);
   } catch (error) {
-    if (error instanceof Error && ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message)) {
-      return res.status(400).json({ error: error.message });
+    const invalidSession = invalidSessionMessage(error);
+    if (invalidSession) {
+      return res.status(400).json({ error: invalidSession });
     }
     if (error instanceof Error && "issues" in error) {
       return res.status(400).json({ error: "INVALID_REQUEST", detail: error.message });
     }
-    return res.status(500).json({ error: "GENERATION_START_FAILED", detail: error instanceof Error ? error.message : "Unknown error" });
+    return res.status(500).json({ error: "GENERATION_START_FAILED", detail: errorDetail(error) });
   }
 });
 
@@ -78,10 +89,11 @@ generateRouter.post("/api/generate/:jobId/cancel", async (req, res) => {
     }
     return res.status(200).json(cancelled);
   } catch (error) {
-    if (error instanceof Error && ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message)) {
-      return res.status(400).json({ error: error.message });
+    const invalidSession = invalidSessionMessage(error);
+    if (invalidSession) {
+      return res.status(400).json({ error: invalidSession });
     }
-    return res.status(500).json({ error: "GENERATION_CANCEL_FAILED", detail: error instanceof Error ? error.message : "Unknown error" });
+    return res.status(500).json({ error: "GENERATION_CANCEL_FAILED", detail: errorDetail(error) });
   }
 });
 
@@ -98,9 +110,10 @@ generateRouter.get("/api/generate/:jobId", async (req, res) => {
     const status = generateStatusSchema.parse(job.status);
     return res.status(200).json({ ...job, status });
   } catch (error) {
-    if (error instanceof Error && ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message)) {
-      return res.status(400).json({ error: error.message });
+    const invalidSession = invalidSessionMessage(error);
+    if (invalidSession) {
+      return res.status(400).json({ error: invalidSession });
     }
-    return res.status(500).json({ error: "GENERATION_STATUS_FAILED", detail: error instanceof Error ? error.message : "Unknown error" });
+    return res.status(500).json({ error: "GENERATION_STATUS_FAILED", detail: errorDetail(error) });
   }
 });

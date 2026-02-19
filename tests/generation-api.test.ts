@@ -7,9 +7,14 @@ import { upsertJob } from "../apps/server/src/lib/jobs";
 import type { GenerateJob } from "../shared/schemas/generate-job";
 
 const sessionId = "SESSION_20990101_000001";
+const sessionRoot = path.join(process.cwd(), "shots", sessionId);
+
+test.after(async () => {
+  await fs.rm(sessionRoot, { recursive: true, force: true });
+});
 
 async function ensureReference() {
-  const ref = path.join(process.cwd(), "shots", sessionId, "source", "reference.png");
+  const ref = path.join(sessionRoot, "source", "reference.png");
   await fs.mkdir(path.dirname(ref), { recursive: true });
   const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0/8AAAAASUVORK5CYII=";
   await fs.writeFile(ref, Buffer.from(tinyPngBase64, "base64"));
@@ -29,9 +34,9 @@ async function waitForTerminalStatus(jobId: string, timeoutMs = 180000) {
 
 test("generation service uses real ml-sharp execution path", async () => {
   await ensureReference();
-  const refDir = path.join(process.cwd(), "shots", sessionId, "source");
+  const refDir = path.join(sessionRoot, "source");
   await fs.rm(path.join(refDir, "scene"), { recursive: true, force: true });
-  await fs.rm(path.join(process.cwd(), "shots", sessionId, "generation"), { recursive: true, force: true });
+  await fs.rm(path.join(sessionRoot, "generation"), { recursive: true, force: true });
 
   const startRes = await startGeneration({
     session_id: sessionId,

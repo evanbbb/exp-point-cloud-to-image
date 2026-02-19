@@ -19,6 +19,20 @@ const upload = multer({
 
 export const repairRouter = Router();
 
+function invalidSessionMessage(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  return ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message) ? error.message : null;
+}
+
+function repairInputPaths(sessionId: string, repairId: string) {
+  return {
+    reference_image_path: `shots/${sessionId}/repairs/${repairId}/input/reference.png`,
+    target_image_path: `shots/${sessionId}/repairs/${repairId}/input/target.png`,
+    delta_pose_path: `shots/${sessionId}/repairs/${repairId}/input/delta_pose.json`,
+    camera_path: `shots/${sessionId}/repairs/${repairId}/input/camera.json`
+  };
+}
+
 fal.config({
   credentials: process.env.FAL_KEY
 });
@@ -121,12 +135,7 @@ repairRouter.post(
         completed_at: new Date().toISOString(),
         duration_ms: Date.now() - start,
         status: "succeeded",
-        input: {
-          reference_image_path: `shots/${sessionId}/repairs/${repairId}/input/reference.png`,
-          target_image_path: `shots/${sessionId}/repairs/${repairId}/input/target.png`,
-          delta_pose_path: `shots/${sessionId}/repairs/${repairId}/input/delta_pose.json`,
-          camera_path: `shots/${sessionId}/repairs/${repairId}/input/camera.json`
-        },
+        input: repairInputPaths(sessionId, repairId),
         fal: {
           model: config.falModel,
           loras: [{ path: config.falLoraPath, scale: 1.0 }],
@@ -165,8 +174,9 @@ repairRouter.post(
 
       return res.type("image/png").send(imageBuffer);
     } catch (error) {
-      if (error instanceof Error && ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message)) {
-        return res.status(400).json({ error: error.message });
+      const invalidSession = invalidSessionMessage(error);
+      if (invalidSession) {
+        return res.status(400).json({ error: invalidSession });
       }
 
       if (sessionId && repairId && deltaPose && withNotes) {
@@ -182,12 +192,7 @@ repairRouter.post(
             completed_at: new Date().toISOString(),
             duration_ms: Date.now() - start,
             status: "failed",
-            input: {
-              reference_image_path: `shots/${sessionId}/repairs/${repairId}/input/reference.png`,
-              target_image_path: `shots/${sessionId}/repairs/${repairId}/input/target.png`,
-              delta_pose_path: `shots/${sessionId}/repairs/${repairId}/input/delta_pose.json`,
-              camera_path: `shots/${sessionId}/repairs/${repairId}/input/camera.json`
-            },
+            input: repairInputPaths(sessionId, repairId),
             fal: {
               model: config.falModel,
               loras: [{ path: config.falLoraPath, scale: 1.0 }],
