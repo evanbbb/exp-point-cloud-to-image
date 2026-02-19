@@ -4,56 +4,227 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Istanbul3D Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
-      :root { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
-      body { margin: 24px; max-width: 980px; }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      :root {
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        --color-text: #FFFFFF;
+        --color-text-muted: #A0A0A0;
+        --color-accent: #007AFF;
+        --color-menu-bg: #212121;
+        --color-canvas-bg: #282828;
+        --color-input-bg: #333333;
+        --color-border: rgba(255, 255, 255, 0.15);
+        --sidebar-width: 200px;
+      }
+
+      html, body { height: 100%; background: var(--color-canvas-bg); color: var(--color-text); }
+      body { display: flex; }
+
+      /* Sidebar */
+      .sidebar {
+        width: var(--sidebar-width);
+        background: var(--color-menu-bg);
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 24px 0;
+      }
+
+      .sidebar-nav {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 0 12px;
+      }
+
+      .sidebar-nav a {
+        display: block;
+        padding: 8px 12px;
+        border-radius: 4px;
+        text-decoration: none;
+        color: var(--color-text-muted);
+        font-size: 13px;
+        font-weight: 500;
+        border-left: 2px solid transparent;
+        transition: color 0.15s;
+      }
+
+      .sidebar-nav a:hover { color: var(--color-text); }
+
+      .sidebar-nav a.active {
+        color: var(--color-text);
+        border-left-color: var(--color-accent);
+      }
+
+      .sidebar-footer { padding: 0 12px; }
+
+      .sidebar-footer a {
+        display: block;
+        padding: 8px 12px;
+        text-decoration: none;
+        color: var(--color-text-muted);
+        font-size: 13px;
+        transition: color 0.15s;
+      }
+
+      .sidebar-footer a:hover { color: var(--color-text); }
+
+      /* Canvas area */
+      .canvas-area {
+        margin-left: var(--sidebar-width);
+        flex: 1;
+        padding: 32px;
+        overflow-y: auto;
+        min-height: 100vh;
+      }
+
+      /* Typography */
+      .typography-h1 { font-size: 20px; font-weight: 700; color: var(--color-text); margin-bottom: 12px; }
+      .typography-body-muted { font-size: 11px; color: var(--color-text-muted); line-height: 1.7; margin-bottom: 24px; }
+      .typography-label { font-size: 11px; color: var(--color-text-muted); }
+
+      /* Controls */
       .row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
-      input, select, button { padding: 8px; }
-      pre { background: #f4f4f4; padding: 12px; border-radius: 8px; white-space: pre-wrap; }
-      canvas { border: 1px solid #d8d8d8; border-radius: 8px; display: block; margin-bottom: 12px; }
-      .label { min-width: 100px; font-weight: 600; }
+      .label { min-width: 100px; font-size: 11px; color: var(--color-text-muted); font-weight: 600; }
+
+      input, select {
+        padding: 7px 10px;
+        background: var(--color-input-bg);
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 12px;
+        outline: none;
+      }
+
+      input:focus, select:focus { border-color: var(--color-accent); }
+
+      input[type="file"] {
+        background: transparent;
+        border: none;
+        padding: 0;
+        color: var(--color-text-muted);
+        font-size: 11px;
+      }
+
+      input[type="range"] {
+        background: transparent;
+        border: none;
+        padding: 0;
+        accent-color: var(--color-accent);
+      }
+
+      button {
+        padding: 7px 14px;
+        background: transparent;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        transition: border-color 0.15s;
+      }
+
+      button:hover { border-color: rgba(255, 255, 255, 0.5); }
+
+      button.primary {
+        background: var(--color-accent);
+        border-color: var(--color-accent);
+        color: #fff;
+      }
+
+      button.primary:hover { border-color: var(--color-accent); opacity: 0.85; }
+
+      canvas {
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        display: block;
+        margin-bottom: 12px;
+        max-width: 100%;
+      }
+
+      pre {
+        background: #1e1e1e;
+        border: 1px solid var(--color-border);
+        padding: 12px;
+        border-radius: 6px;
+        white-space: pre-wrap;
+        font-family: inherit;
+        font-size: 11px;
+        color: var(--color-text-muted);
+        margin-top: 12px;
+      }
     </style>
   </head>
   <body>
-    <h1>Viewer (Mock Generation)</h1>
+    <nav class="sidebar">
+      <div class="sidebar-nav">
+        <a href="/viewer" class="active">Viewer</a>
+        <a href="/repair">Repair</a>
+      </div>
+      <div class="sidebar-footer">
+        <a href="#">⚙ Settings</a>
+      </div>
+    </nav>
 
-    <div class="row">
-      <span class="label">Session</span>
-      <input id="sessionId" placeholder="SESSION_YYYYMMDD_HHMMSS" />
-      <button id="start">Start Generation</button>
-      <button id="poll">Poll Status</button>
-      <input id="jobId" placeholder="job id" />
-    </div>
+    <main class="canvas-area">
+      <h1 class="typography-h1">Viewer</h1>
+      <p class="typography-body-muted">
+        <strong style="color:var(--color-text);">Step 1 of 2.</strong> Drop a reference photo to generate a 3D Gaussian splat scene.
+        Navigate to a new camera angle using the lens and dolly controls, then hit
+        <em>Capture View</em> to export that frame. Each capture saves a target image and
+        camera data for repair. Take your captures to the
+        <a href="/repair" style="color:var(--color-accent);">Repair app</a> when ready.
+      </p>
 
-    <div class="row">
-      <button id="pickDir">Pick Session Folder</button>
-      <span id="dirState">No folder selected</span>
-    </div>
-    <div class="row">
-      <span class="label">Reference</span>
-      <input id="refFile" type="file" accept="image/png,image/jpeg" />
-      <button id="initRef">Initialize reference.png</button>
-    </div>
+      <div class="row">
+        <span class="label">Session</span>
+        <input id="sessionId" placeholder="SESSION_YYYYMMDD_HHMMSS" />
+        <button id="start">Start Generation</button>
+        <button id="poll">Poll Status</button>
+        <input id="jobId" placeholder="job id" />
+      </div>
 
-    <canvas id="scene" width="960" height="540"></canvas>
+      <div class="row">
+        <button id="pickDir">Pick Session Folder</button>
+        <span id="dirState" class="typography-label">No folder selected</span>
+      </div>
 
-    <div class="row">
-      <span class="label">Lens</span>
-      <select id="lensPreset">
-        <option>24mm</option>
-        <option>35mm</option>
-        <option selected>50mm</option>
-        <option>85mm</option>
-      </select>
+      <div class="row">
+        <span class="label">Reference</span>
+        <input id="refFile" type="file" accept="image/png,image/jpeg" />
+        <button id="initRef">Initialize reference.png</button>
+      </div>
 
-      <span class="label">Dolly Z</span>
-      <input id="dolly" type="range" min="-2" max="2" step="0.01" value="0" />
-      <span id="dollyValue">0.00</span>
+      <canvas id="scene" width="960" height="540"></canvas>
 
-      <button id="capture">Capture View</button>
-    </div>
+      <div class="row">
+        <span class="label">Lens</span>
+        <select id="lensPreset">
+          <option>24mm</option>
+          <option>35mm</option>
+          <option selected>50mm</option>
+          <option>85mm</option>
+        </select>
 
-    <pre id="out">Ready.</pre>
+        <span class="label">Dolly Z</span>
+        <input id="dolly" type="range" min="-2" max="2" step="0.01" value="0" />
+        <span id="dollyValue" class="typography-label">0.00</span>
+
+        <button id="capture" class="primary">Capture View</button>
+      </div>
+
+      <pre id="out">Ready.</pre>
+    </main>
 
     <script>
       const lensFov = {

@@ -4,17 +4,123 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Istanbul3D Repair</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
-      :root { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
-      body { margin: 24px; max-width: 840px; }
-      .row { display: flex; gap: 8px; margin-bottom: 12px; }
-      input, button { padding: 8px; }
-      pre { background: #f4f4f4; padding: 12px; border-radius: 8px; white-space: pre-wrap; }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      :root {
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        --color-text: #FFFFFF;
+        --color-text-muted: #A0A0A0;
+        --color-accent: #007AFF;
+        --color-menu-bg: #212121;
+        --color-canvas-bg: #282828;
+        --color-border: rgba(255, 255, 255, 0.15);
+        --sidebar-width: 200px;
+      }
+
+      html, body { height: 100%; background: var(--color-canvas-bg); color: var(--color-text); }
+      body { display: flex; }
+
+      /* Sidebar */
+      .sidebar {
+        width: var(--sidebar-width);
+        background: var(--color-menu-bg);
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 24px 0;
+      }
+
+      .sidebar-nav {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 0 12px;
+      }
+
+      .sidebar-nav a {
+        display: block;
+        padding: 8px 12px;
+        border-radius: 4px;
+        text-decoration: none;
+        color: var(--color-text-muted);
+        font-size: 13px;
+        font-weight: 500;
+        border-left: 2px solid transparent;
+        transition: color 0.15s;
+      }
+
+      .sidebar-nav a:hover { color: var(--color-text); }
+
+      .sidebar-nav a.active {
+        color: var(--color-text);
+        border-left-color: var(--color-accent);
+      }
+
+      .sidebar-footer { padding: 0 12px; }
+
+      .sidebar-footer a {
+        display: block;
+        padding: 8px 12px;
+        text-decoration: none;
+        color: var(--color-text-muted);
+        font-size: 13px;
+        transition: color 0.15s;
+      }
+
+      .sidebar-footer a:hover { color: var(--color-text); }
+
+      /* Canvas area */
+      .canvas-area {
+        margin-left: var(--sidebar-width);
+        flex: 1;
+        padding: 32px;
+        overflow-y: auto;
+        min-height: 100vh;
+      }
+
+      /* Typography */
+      .typography-h1 { font-size: 20px; font-weight: 700; color: var(--color-text); margin-bottom: 12px; }
+      .typography-body-muted { font-size: 11px; color: var(--color-text-muted); line-height: 1.7; margin-bottom: 24px; }
+
+      pre {
+        background: #1e1e1e;
+        border: 1px solid var(--color-border);
+        padding: 12px;
+        border-radius: 6px;
+        white-space: pre-wrap;
+        font-family: inherit;
+        font-size: 11px;
+        color: var(--color-text-muted);
+      }
     </style>
   </head>
   <body>
-    <h1>Repair (Single Item)</h1>
-    <p>Use API client/Postman for now. This page is a shell for paid-confirm + single-run flow.</p>
-    <pre id="out">POST /api/repair expects multipart files: reference,target,delta_pose,camera and paid_confirm=true</pre>
+    <nav class="sidebar">
+      <div class="sidebar-nav">
+        <a href="/viewer">Viewer</a>
+        <a href="/repair" class="active">Repair</a>
+      </div>
+      <div class="sidebar-footer">
+        <a href="#">⚙ Settings</a>
+      </div>
+    </nav>
+
+    <main class="canvas-area">
+      <h1 class="typography-h1">Repair</h1>
+      <p class="typography-body-muted">
+        <strong style="color:var(--color-text);">Step 2 of 2.</strong> The viewer's captures contain a target image rendered from
+        a new camera angle — but the 3D splat has holes and artifacts where it had to guess.
+        This app sends the original reference photo and the captured target to a FLUX LoRA model
+        that fills in the blanks, producing a clean <em>repaired.png</em> for each capture.
+        Requires a <code style="color:var(--color-text);">FAL_KEY</code> and explicit paid confirmation before each run.
+      </p>
+      <pre>POST /api/repair expects multipart files: reference, target, delta_pose, camera and paid_confirm=true</pre>
+    </main>
   </body>
 </html>
