@@ -549,7 +549,6 @@ document.getElementById('sourceSelect').onchange = async () => {
       await clearLoadedGeneratedScene({ notify: false });
     }
     sessionData.active_source = sel.value;
-    await writeSessionFile();
     renderSourceSelect();
     renderJobList();
     setImagePlane(file);
@@ -597,7 +596,6 @@ document.getElementById('refFile').onchange = async () => {
       await clearLoadedGeneratedScene({ notify: false });
     }
     sessionData.active_source = srcId;
-    await writeSessionFile();
     renderSourceSelect();
     renderJobList();
     // Load into 3D scene

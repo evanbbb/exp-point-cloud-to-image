@@ -95,15 +95,37 @@ export function createGenerationController({
       `/api/generate/${activeJob.job_id}?${generationQuery(sessionData)}`
     );
     const data = await readJsonResponse(res, 'Poll generation');
+    const prevStatus = activeJob.status;
+    const prevProgress = activeJob.progress_percent;
+    const prevStage = activeJob.stage;
+    const prevManifestPath = activeJob.scene_manifest_path;
+    const prevError = activeJob.error ? JSON.stringify(activeJob.error) : '';
+    const prevLogs = Array.isArray(activeJob.logs_tail) ? activeJob.logs_tail : [];
+    const nextLogs = Array.isArray(data.logs_tail) ? data.logs_tail : prevLogs;
+
     activeJob.status = data.status || activeJob.status;
     if (typeof data.progress_percent === 'number') activeJob.progress_percent = data.progress_percent;
     if (data.stage) activeJob.stage = data.stage;
     if (data.scene_manifest_path) activeJob.scene_manifest_path = data.scene_manifest_path;
     if (Array.isArray(data.logs_tail)) activeJob.logs_tail = data.logs_tail;
     if (data.error) activeJob.error = data.error;
+
+    const logsChanged =
+      prevLogs.length !== nextLogs.length ||
+      prevLogs[prevLogs.length - 1] !== nextLogs[nextLogs.length - 1];
+    const changed =
+      activeJob.status !== prevStatus ||
+      activeJob.progress_percent !== prevProgress ||
+      activeJob.stage !== prevStage ||
+      activeJob.scene_manifest_path !== prevManifestPath ||
+      (activeJob.error ? JSON.stringify(activeJob.error) : '') !== prevError ||
+      logsChanged;
+
     activeJob.polled_at = new Date().toISOString();
-    await writeSessionFile();
-    renderJobList();
+    if (changed) {
+      await writeSessionFile();
+      renderJobList();
+    }
     log({
       poll: 'generation_status',
       job_id: activeJob.job_id,
