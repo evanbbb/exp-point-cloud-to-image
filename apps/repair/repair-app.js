@@ -5,8 +5,7 @@ let sessionData = null;
 let activeSourceId = null;
 let captures = [];        // [{ capId, targetFile, targetUrl, cameraFile, deltaPoseFile }]
 let sourceThumbUrl = null;
-let selected = new Set(); // capId strings
-let lastSelectedCapId = null;
+let selectedCapId = null;
 let isRunning = false;
 let prevRepairsGeneration = 0;
 
@@ -115,8 +114,7 @@ async function loadSourceThumbnail(sourceId) {
 
 async function enumerateCaptures(sourceId) {
   captures = [];
-  selected.clear();
-  lastSelectedCapId = null;
+  selectedCapId = null;
   document.getElementById('promptPreview').style.display = 'none';
   document.getElementById('previousRepairs').style.display = 'none';
   if (!sourceId || !sessionDirHandle) {
@@ -173,13 +171,12 @@ function renderCapturesGrid() {
   }
   for (const cap of captures) {
     const card = document.createElement('div');
-    card.className = 'capture-card' + (selected.has(cap.capId) ? ' selected' : '');
+    card.className = 'capture-card' + (cap.capId === selectedCapId ? ' selected' : '');
     card.dataset.capId = cap.capId;
     card.innerHTML = `
       <img src="${cap.targetUrl}" alt="${cap.capId}" style="cursor:zoom-in;" />
       <div class="capture-card-label">
         <span>${cap.capId}</span>
-        <div class="capture-check"></div>
       </div>
     `;
     card.querySelector('img').onclick = (e) => {
@@ -194,18 +191,11 @@ function renderCapturesGrid() {
 
 function toggleCapture(capId) {
   if (isRunning) return;
-  if (selected.has(capId)) {
-    selected.delete(capId);
-  } else {
-    selected.add(capId);
-    lastSelectedCapId = capId;
-  }
+  selectedCapId = selectedCapId === capId ? null : capId;
   // Update card classes without full re-render
   const grid = document.getElementById('capturesGrid');
   for (const card of grid.children) {
-    if (card.dataset.capId === capId) {
-      card.classList.toggle('selected', selected.has(capId));
-    }
+    card.classList.toggle('selected', card.dataset.capId === selectedCapId);
   }
   updateActionBar();
   updatePromptPreview();
@@ -213,31 +203,33 @@ function toggleCapture(capId) {
 }
 
 function updateActionBar() {
-  const count = selected.size;
   document.getElementById('selectionCount').textContent =
-    count === 1 ? '1 capture selected' : `${count} captures selected`;
+    selectedCapId ? '1 capture selected' : 'No capture selected';
   updateRunButton();
 }
 
 function updateRunButton() {
   const btn = document.getElementById('runRepairBtn');
   const paid = document.getElementById('paidConfirm').checked;
-  const canRun = selected.size > 0 && paid && !isRunning;
+  const runs = getRunCount();
+  const canRun = !!selectedCapId && paid && !isRunning;
   btn.disabled = !canRun;
   btn.textContent = isRunning
     ? 'Running...'
-    : selected.size > 0
-      ? `Run Repair (${selected.size})`
+    : selectedCapId
+      ? `Run Repair${runs > 1 ? ` ×${runs}` : ''}`
       : 'Run Repair';
+}
+
+function getRunCount() {
+  return Number(document.getElementById('runCount')?.value ?? 1);
 }
 
 async function updatePreviousRepairs() {
   const gen = ++prevRepairsGeneration;
   const panel = document.getElementById('previousRepairs');
-  if (selected.size === 0) { panel.style.display = 'none'; return; }
-  const capId = lastSelectedCapId && selected.has(lastSelectedCapId)
-    ? lastSelectedCapId
-    : [...selected][selected.size - 1];
+  if (!selectedCapId) { panel.style.display = 'none'; return; }
+  const capId = selectedCapId;
   const cap = captures.find(c => c.capId === capId);
   document.getElementById('prevRepairsCapId').textContent = capId;
   panel.style.display = '';
@@ -284,46 +276,44 @@ async function updatePreviousRepairs() {
       const dt = new Date(repair.created_at);
       const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
         + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      const failedLabel = repair.status === 'failed'
+        ? `<span class="result-status result-status--failed" style="font-size:9px;text-transform:uppercase;">Failed</span>`
+        : '';
       card.innerHTML = `
         <img src="${imgUrl ?? ''}" alt="${repair.repair_id}"
           style="cursor:${imgUrl ? 'zoom-in' : 'default'};${!imgUrl ? 'opacity:0.3;' : ''}" />
-        <div class="capture-card-label">
-          <span>${dateStr}</span>
-          <span class="result-status result-status--${repair.status}" style="font-size:9px;text-transform:uppercase;">${repair.status}</span>
+        <div class="capture-card-label" style="flex-direction:column;align-items:flex-start;gap:3px;">
+          <span style="font-size:10px;">${dateStr}${failedLabel ? ' ' : ''}${failedLabel}</span>
+          <div class="repair-card-actions" style="display:flex;gap:2px;"></div>
         </div>
       `;
       if (imgUrl) {
         card.querySelector('img').onclick = (e) => { e.stopPropagation(); openLightbox(imgUrl); };
       }
-      if (imgUrl) {
-        const labelEl = card.querySelector('.capture-card-label');
-        const btnWrap = document.createElement('div');
-        btnWrap.style.cssText = 'display:flex;gap:2px;align-items:center;';
-        if (cap) {
-          const compareBtn = document.createElement('button');
-          compareBtn.className = 'icon-btn compare-trigger';
-          compareBtn.title = 'Compare source / capture / repair';
-          compareBtn.innerHTML = '<i class="ph ph-eye"></i>';
-          compareBtn.onclick = (e) => {
-            e.stopPropagation();
-            openCompare(sourceThumbUrl, cap.targetUrl, imgUrl);
-          };
-          btnWrap.appendChild(compareBtn);
-        }
-        const folderBtn = document.createElement('button');
-        folderBtn.className = 'icon-btn compare-trigger';
-        folderBtn.title = 'Open in Finder';
-        folderBtn.innerHTML = '<i class="ph ph-folder-open"></i>';
-        folderBtn.onclick = async (e) => {
+      const actionsEl = card.querySelector('.repair-card-actions');
+      if (imgUrl && cap) {
+        const compareBtn = document.createElement('button');
+        compareBtn.className = 'icon-btn compare-trigger';
+        compareBtn.title = 'Compare source / capture / repair';
+        compareBtn.innerHTML = '<i class="ph ph-eye"></i>';
+        compareBtn.onclick = (e) => {
           e.stopPropagation();
-          const relPath = `${bucket}${repair.session_id}/repairs/${repair.repair_id}/output`;
-          try {
-            await fetch('/api/open-folder', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rel_path: relPath }) });
-          } catch (err) { log({ error: `Failed to open folder: ${err}` }); }
+          openCompare(sourceThumbUrl, cap.targetUrl, imgUrl);
         };
-        btnWrap.appendChild(folderBtn);
-        labelEl.insertBefore(btnWrap, labelEl.children[1]);
+        actionsEl.appendChild(compareBtn);
       }
+      const folderBtn = document.createElement('button');
+      folderBtn.className = 'icon-btn compare-trigger';
+      folderBtn.title = 'Open in Finder';
+      folderBtn.innerHTML = '<i class="ph ph-folder-open"></i>';
+      folderBtn.onclick = async (e) => {
+        e.stopPropagation();
+        const relPath = `${bucket}${repair.session_id}/repairs/${repair.repair_id}/output`;
+        try {
+          await fetch('/api/open-folder', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rel_path: relPath }) });
+        } catch (err) { log({ error: `Failed to open folder: ${err}` }); }
+      };
+      actionsEl.appendChild(folderBtn);
       grid.appendChild(card);
     }
   } catch {
@@ -333,13 +323,11 @@ async function updatePreviousRepairs() {
 
 async function updatePromptPreview() {
   const panel = document.getElementById('promptPreview');
-  if (selected.size === 0) {
+  if (!selectedCapId) {
     panel.style.display = 'none';
     return;
   }
-  const capId = lastSelectedCapId && selected.has(lastSelectedCapId)
-    ? lastSelectedCapId
-    : [...selected][selected.size - 1];
+  const capId = selectedCapId;
   const cap = captures.find(c => c.capId === capId);
   if (!cap) { panel.style.display = 'none'; return; }
   try {
@@ -361,7 +349,7 @@ async function updatePromptPreview() {
 // ── Repair execution ────────────────────────────────────────
 
 async function runRepairs() {
-  if (isRunning || selected.size === 0) return;
+  if (isRunning || !selectedCapId) return;
   isRunning = true;
   updateRunButton();
 
@@ -372,6 +360,9 @@ async function runRepairs() {
   const notes = document.getElementById('notesField').value.trim();
   const source = sessionData.sources.find(s => s.id === activeSourceId);
   if (!source) { log('No active source.'); isRunning = false; updateRunButton(); return; }
+
+  const cap = captures.find(c => c.capId === selectedCapId);
+  if (!cap) { log('Selected capture not found.'); isRunning = false; updateRunButton(); return; }
 
   // Load reference image once
   let referenceFile;
@@ -387,23 +378,21 @@ async function runRepairs() {
     return;
   }
 
-  const selectedCaptures = captures.filter(c => selected.has(c.capId));
+  const runs = getRunCount();
 
-  for (const cap of selectedCaptures) {
+  for (let i = 0; i < runs; i++) {
     const repairId = `repair_${Date.now()}`;
-    const cardId = `result-${cap.capId}-${repairId}`;
 
     // Add result card as running
     const card = document.createElement('div');
     card.className = 'result-card';
-    card.id = cardId;
     card.innerHTML = `
       <div class="result-images">
         <img src="${cap.targetUrl}" alt="target" />
         <img src="" alt="repaired" style="display:none" />
       </div>
       <div class="result-info">
-        <span class="result-cap-id">${cap.capId}</span>
+        <span class="result-cap-id">${cap.capId}${runs > 1 ? ` (${i + 1}/${runs})` : ''}</span>
         <span class="result-status result-status--running">Running</span>
         <span class="result-meta">${repairId}</span>
       </div>
@@ -442,15 +431,13 @@ async function runRepairs() {
 
       await res.blob(); // consume body
 
-      log(`${cap.capId} repaired successfully.`);
+      log(`${cap.capId} run ${i + 1} complete.`);
 
       // Move card out of Jobs and into Previous Repairs
       card.remove();
       if (!list.hasChildNodes()) {
         panel.style.display = 'none';
       }
-      // Ensure the completed cap is the focused one so it shows up immediately
-      lastSelectedCapId = cap.capId;
       await updatePreviousRepairs();
     } catch (err) {
       // Update card to failed
@@ -462,13 +449,13 @@ async function runRepairs() {
       errorEl.textContent = String(err.message || err);
       card.querySelector('.result-info').appendChild(errorEl);
 
-      log({ error: `${cap.capId} failed: ${err.message || err}` });
+      log({ error: `${cap.capId} run ${i + 1} failed: ${err.message || err}` });
     }
   }
 
   isRunning = false;
   updateRunButton();
-  log('Repair batch complete.');
+  log('Done.');
 }
 
 // ── Folder picking ──────────────────────────────────────────
@@ -528,19 +515,8 @@ document.getElementById('sourceSelect').onchange = () => {
   enumerateCaptures(activeSourceId);
 };
 
-document.getElementById('selectAllBtn').onclick = () => {
-  if (isRunning) return;
-  captures.forEach(c => selected.add(c.capId));
-  renderCapturesGrid();
-};
-
-document.getElementById('clearSelBtn').onclick = () => {
-  if (isRunning) return;
-  selected.clear();
-  renderCapturesGrid();
-};
-
 document.getElementById('paidConfirm').onchange = updateRunButton;
+document.getElementById('runCount').onchange = updateRunButton;
 document.getElementById('runRepairBtn').onclick = runRepairs;
 document.getElementById('notesField').oninput = updatePromptPreview;
 

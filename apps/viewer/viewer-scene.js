@@ -6,7 +6,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
   const SHOT_INITIAL_POS = new THREE.Vector3(0, 1, 3);
   const SHOT_INITIAL_ROT = new THREE.Euler();
 
-  let renderer, scene, orbitCamera, shotCamera, cameraHelper, controls;
+  let renderer, scene, orbitCamera, shotCamera, cameraHelper, controls, gridHelper, axesHelper;
   let imagePlane = null;
   let imagePlaneVisible = true;
   let generatedSceneObject = null;
@@ -362,11 +362,11 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     cameraHelper = new THREE.CameraHelper(shotCamera);
     scene.add(cameraHelper);
 
-    const grid = new THREE.GridHelper(10, 20, 0x444444, 0x333333);
-    scene.add(grid);
+    gridHelper = new THREE.GridHelper(10, 20, 0x444444, 0x333333);
+    scene.add(gridHelper);
 
-    const axes = new THREE.AxesHelper(1);
-    scene.add(axes);
+    axesHelper = new THREE.AxesHelper(1);
+    scene.add(axesHelper);
 
     controls = new OrbitControls(orbitCamera, renderer.domElement);
     controls.target.set(0, 0, 0);
@@ -586,10 +586,18 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       throw new Error('Scene is not ready for capture.');
     }
 
+    // Hide navigational objects so they don't appear in the captured image.
+    const prevCameraHelperVisible = cameraHelper?.visible ?? false;
+    const prevGridVisible = gridHelper?.visible ?? true;
+    const prevAxesVisible = axesHelper?.visible ?? true;
+    if (cameraHelper) cameraHelper.visible = false;
+    if (gridHelper) gridHelper.visible = false;
+    if (axesHelper) axesHelper.visible = false;
+
+    try {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       // Force a fresh render immediately before reading pixels.
       controls?.update();
-      cameraHelper.visible = getActiveCameraMode() !== 'shot';
       renderer.render(scene, getActiveRenderCamera());
 
       const source = renderer.domElement;
@@ -628,6 +636,12 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     }
 
     throw new Error('Failed to capture non-uniform frame.');
+    } finally {
+      // Restore navigational object visibility.
+      if (cameraHelper) cameraHelper.visible = prevCameraHelperVisible;
+      if (gridHelper) gridHelper.visible = prevGridVisible;
+      if (axesHelper) axesHelper.visible = prevAxesVisible;
+    }
   }
 
   function getCameraJson() {

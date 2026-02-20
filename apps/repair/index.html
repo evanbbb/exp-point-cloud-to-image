@@ -481,10 +481,6 @@
         <div class="section">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
             <span class="section-label" style="margin-bottom:0;" id="capturesLabel">Captures</span>
-            <div style="display:flex;gap:8px;">
-              <button id="selectAllBtn" class="icon-btn" style="font-size:11px;padding:4px 8px;">Select All</button>
-              <button id="clearSelBtn" class="icon-btn" style="font-size:11px;padding:4px 8px;">Clear</button>
-            </div>
           </div>
           <div id="capturesGrid" class="captures-grid"></div>
         </div>
@@ -508,10 +504,21 @@
           </div>
           <textarea id="notesField" placeholder="Notes (optional) — appended to repair prompt"></textarea>
           <div class="action-bar-row">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <label class="toggle-inline">
               <input type="checkbox" id="paidConfirm" />
               I understand this uses paid API credits
             </label>
+            <label class="toggle-inline">
+              Runs:
+              <select id="runCount" style="width:52px;">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+          </div>
           </div>
           <div class="action-bar-row">
             <button id="runRepairBtn" class="primary" disabled>Run Repair</button>
