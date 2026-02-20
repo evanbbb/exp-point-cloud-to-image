@@ -6,7 +6,20 @@ let activeSourceId = null;
 let captures = [];        // [{ capId, targetFile, targetUrl, cameraFile, deltaPoseFile }]
 let sourceThumbUrl = null;
 let selected = new Set(); // capId strings
+let lastSelectedCapId = null;
 let isRunning = false;
+
+// ── Lightbox ────────────────────────────────────────────────
+
+function openLightbox(url) {
+  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightboxOverlay').style.display = 'flex';
+}
+
+function closeLightbox() {
+  document.getElementById('lightboxOverlay').style.display = 'none';
+  document.getElementById('lightboxImg').src = '';
+}
 
 // ── UI helpers ──────────────────────────────────────────────
 
@@ -72,6 +85,8 @@ async function loadSourceThumbnail(sourceId) {
     if (sourceThumbUrl) URL.revokeObjectURL(sourceThumbUrl);
     sourceThumbUrl = URL.createObjectURL(file);
     img.src = sourceThumbUrl;
+    img.onclick = () => openLightbox(sourceThumbUrl);
+    img.style.cursor = 'pointer';
     label.textContent = source.filename;
     thumb.style.display = '';
   } catch {
@@ -84,6 +99,9 @@ async function loadSourceThumbnail(sourceId) {
 async function enumerateCaptures(sourceId) {
   captures = [];
   selected.clear();
+  lastSelectedCapId = null;
+  document.getElementById('promptPreview').style.display = 'none';
+  document.getElementById('previousRepairs').style.display = 'none';
   if (!sourceId || !sessionDirHandle) {
     renderCapturesGrid();
     return;
@@ -141,12 +159,16 @@ function renderCapturesGrid() {
     card.className = 'capture-card' + (selected.has(cap.capId) ? ' selected' : '');
     card.dataset.capId = cap.capId;
     card.innerHTML = `
-      <img src="${cap.targetUrl}" alt="${cap.capId}" />
+      <img src="${cap.targetUrl}" alt="${cap.capId}" style="cursor:zoom-in;" />
       <div class="capture-card-label">
         <span>${cap.capId}</span>
         <div class="capture-check"></div>
       </div>
     `;
+    card.querySelector('img').onclick = (e) => {
+      e.stopPropagation();
+      openLightbox(cap.targetUrl);
+    };
     card.onclick = () => toggleCapture(cap.capId);
     grid.appendChild(card);
   }
@@ -155,8 +177,12 @@ function renderCapturesGrid() {
 
 function toggleCapture(capId) {
   if (isRunning) return;
-  if (selected.has(capId)) selected.delete(capId);
-  else selected.add(capId);
+  if (selected.has(capId)) {
+    selected.delete(capId);
+  } else {
+    selected.add(capId);
+    lastSelectedCapId = capId;
+  }
   // Update card classes without full re-render
   const grid = document.getElementById('capturesGrid');
   for (const card of grid.children) {
@@ -165,6 +191,8 @@ function toggleCapture(capId) {
     }
   }
   updateActionBar();
+  updatePromptPreview();
+  updatePreviousRepairs();
 }
 
 function updateActionBar() {
@@ -184,6 +212,96 @@ function updateRunButton() {
     : selected.size > 0
       ? `Run Repair (${selected.size})`
       : 'Run Repair';
+}
+
+async function updatePreviousRepairs() {
+  const panel = document.getElementById('previousRepairs');
+  if (selected.size === 0) { panel.style.display = 'none'; return; }
+  const capId = lastSelectedCapId && selected.has(lastSelectedCapId)
+    ? lastSelectedCapId
+    : [...selected][selected.size - 1];
+  const cap = captures.find(c => c.capId === capId);
+  document.getElementById('prevRepairsCapId').textContent = capId;
+  panel.style.display = '';
+  const grid = document.getElementById('prevRepairsGrid');
+  grid.innerHTML = '<div class="captures-empty">Loading...</div>';
+  try {
+    // Read this capture's delta pose for legacy matching (repairs before cap_id was stored)
+    let capPose = null;
+    if (cap) {
+      try { capPose = JSON.parse(await cap.deltaPoseFile.text()); } catch { /* ignore */ }
+    }
+
+    const res = await fetch(`/api/repairs/list?session_id=${encodeURIComponent(sessionData.session_id)}`);
+    const data = await res.json();
+    const allRepairs = data.repairs ?? [];
+
+    const repairs = allRepairs.filter(r => {
+      if (r.cap_id) return r.cap_id === capId;
+      // Legacy: no cap_id — match by delta_pose_values
+      if (!capPose || !r.prompt?.delta_pose_values) return false;
+      const p = r.prompt.delta_pose_values;
+      return p.x === capPose.x && p.y === capPose.y && p.z === capPose.z
+          && p.pitch === capPose.pitch && p.yaw === capPose.yaw && p.roll === capPose.roll;
+    });
+
+    if (repairs.length === 0) {
+      grid.innerHTML = '<div class="captures-empty">No previous repairs for this capture.</div>';
+      return;
+    }
+    grid.innerHTML = '';
+    for (const repair of repairs) {
+      const card = document.createElement('div');
+      card.className = 'capture-card';
+      const imgUrl = repair.output
+        ? `/shots/${repair.session_id}/repairs/${repair.repair_id}/output/repaired.png`
+        : null;
+      const dt = new Date(repair.created_at);
+      const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+        + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      card.innerHTML = `
+        <img src="${imgUrl ?? ''}" alt="${repair.repair_id}"
+          style="cursor:${imgUrl ? 'zoom-in' : 'default'};${!imgUrl ? 'opacity:0.3;' : ''}" />
+        <div class="capture-card-label">
+          <span>${dateStr}</span>
+          <span class="result-status result-status--${repair.status}" style="font-size:9px;text-transform:uppercase;">${repair.status}</span>
+        </div>
+      `;
+      if (imgUrl) {
+        card.querySelector('img').onclick = (e) => { e.stopPropagation(); openLightbox(imgUrl); };
+      }
+      grid.appendChild(card);
+    }
+  } catch {
+    grid.innerHTML = '<div class="captures-empty">Failed to load previous repairs.</div>';
+  }
+}
+
+async function updatePromptPreview() {
+  const panel = document.getElementById('promptPreview');
+  if (selected.size === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  const capId = lastSelectedCapId && selected.has(lastSelectedCapId)
+    ? lastSelectedCapId
+    : [...selected][selected.size - 1];
+  const cap = captures.find(c => c.capId === capId);
+  if (!cap) { panel.style.display = 'none'; return; }
+  try {
+    const deltaPoseText = await cap.deltaPoseFile.text();
+    const pose = JSON.parse(deltaPoseText);
+    const fmt = v => (typeof v === 'number' ? v.toFixed(4) : v);
+    const poseStr = `${fmt(pose.x)},${fmt(pose.y)},${fmt(pose.z)},${fmt(pose.pitch)},${fmt(pose.yaw)},${fmt(pose.roll)}`;
+    let prompt = `Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair missing regions and perspective artifacts. The camera has moved by: ${poseStr}`;
+    const notes = document.getElementById('notesField').value.trim();
+    if (notes) prompt += `\n\n${notes}`;
+    document.getElementById('promptCapId').textContent = capId;
+    document.getElementById('promptText').textContent = prompt;
+    panel.style.display = '';
+  } catch {
+    panel.style.display = 'none';
+  }
 }
 
 // ── Repair execution ────────────────────────────────────────
@@ -245,6 +363,7 @@ async function runRepairs() {
       const fd = new FormData();
       fd.append('session_id', sessionData.session_id);
       fd.append('repair_id', repairId);
+      fd.append('cap_id', cap.capId);
       fd.append('paid_confirm', 'true');
       fd.append('reference', referenceFile, source.filename);
       fd.append('target', cap.targetFile, 'target.png');
@@ -272,9 +391,13 @@ async function runRepairs() {
       const statusEl = card.querySelector('.result-status');
       statusEl.className = 'result-status result-status--succeeded';
       statusEl.textContent = 'Succeeded';
-      const repairedImg = card.querySelectorAll('.result-images img')[1];
+      const [targetImg, repairedImg] = card.querySelectorAll('.result-images img');
+      targetImg.style.cursor = 'zoom-in';
+      targetImg.onclick = (e) => { e.stopPropagation(); openLightbox(cap.targetUrl); };
       repairedImg.src = repairedUrl;
       repairedImg.style.display = '';
+      repairedImg.style.cursor = 'zoom-in';
+      repairedImg.onclick = (e) => { e.stopPropagation(); openLightbox(repairedUrl); };
       const meta = card.querySelector('.result-meta');
       const sizeMb = (blob.size / 1024 / 1024).toFixed(2);
       const folderPath = `${sessionData.session_id}/repairs/${repairId}/output`;
@@ -371,6 +494,12 @@ document.getElementById('clearSelBtn').onclick = () => {
 
 document.getElementById('paidConfirm').onchange = updateRunButton;
 document.getElementById('runRepairBtn').onclick = runRepairs;
+document.getElementById('notesField').oninput = updatePromptPreview;
+
+document.getElementById('lightboxOverlay').onclick = (e) => {
+  if (e.target === e.currentTarget) closeLightbox();
+};
+document.getElementById('lightboxClose').onclick = closeLightbox;
 
 document.getElementById('resultsList').onclick = async (event) => {
   const btn = event.target.closest('[data-open-folder]');

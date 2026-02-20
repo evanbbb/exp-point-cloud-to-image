@@ -85,6 +85,20 @@ Cards are used to list items (e.g. episodes, characters, locations) in a consist
 
 ---
 
+## Image Lightbox
+
+Use a consistent lightbox pattern when users open preview images (avatars, stage images, references).
+
+- **Overlay** — Full-screen dark overlay (`fixed inset-0`) that visually separates the lightbox from the page.
+- **Centered image** — Display the selected image centered and constrained to viewport (`max-width` and `max-height`) with `object-contain`.
+- **Close behavior (required)** — Clicking outside the image (on the overlay) closes the lightbox.
+- **Inside click behavior** — Clicking the image itself must not close the lightbox.
+- **Top-right controls** — Include a close button and optional image actions (for example download) in the top-right corner.
+- **Control styling** — Use the same button language as the app (dark surface, white icon/text, hover brighten).
+- **Single image focus** — Only one image is shown at a time in the lightbox.
+
+---
+
 ## Summary Checklist
 
 When implementing a new feature, check:
@@ -97,3 +111,4 @@ When implementing a new feature, check:
 - [ ] Icons use Phosphor Icons only; Regular weight for most UI; consistent size within each control type.
 - [ ] Buttons use thin white outlines (or solid blue for primary CTA only).
 - [ ] Cards use the same container style, title (`.typography-h3`), body/muted description (`.typography-body-muted`), and grid layout across Episodes, Characters, and Locations.
+- [ ] Image lightboxes use full-screen overlay, centered contained image, and click-off-overlay to close.

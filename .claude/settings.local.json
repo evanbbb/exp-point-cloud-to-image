@@ -29,7 +29,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(ls:*)",
       "Bash(node --version:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(npm run dev:*)"
     ]
   }
 }

@@ -5,7 +5,7 @@ import multer from "multer";
 import { fal } from "@fal-ai/client";
 import { deltaPoseSchema } from "../../../../shared/schemas/delta-pose";
 import { cameraSchema } from "../../../../shared/schemas/camera";
-import type { RepairMeta } from "../../../../shared/schemas/repair-meta";
+import { repairMetaSchema, type RepairMeta } from "../../../../shared/schemas/repair-meta";
 import { config } from "../lib/config";
 import { parseSessionId, resolveWithin } from "../lib/paths";
 import { writeRepairMeta } from "../lib/repair-meta";
@@ -40,6 +40,39 @@ fal.config({
 const PROMPT_TEMPLATE =
   "Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair missing regions and perspective artifacts. The camera has moved by: {x,y,z,pitch,yaw,roll}";
 
+repairRouter.get("/api/repairs/list", async (req, res) => {
+  try {
+    const sessionId = parseSessionId(String(req.query.session_id ?? ""));
+
+    const repairsDir = resolveWithin(config.shotsRoot, `${sessionId}/repairs`);
+    let entries: string[] = [];
+    try {
+      entries = (await fs.readdir(repairsDir)).filter(e => /^repair_/.test(e));
+    } catch {
+      return res.json({ repairs: [] });
+    }
+
+    const repairs: RepairMeta[] = [];
+    for (const entry of entries) {
+      try {
+        const metaPath = path.join(repairsDir, entry, "output", "repair_meta.json");
+        const text = await fs.readFile(metaPath, "utf8");
+        const meta = repairMetaSchema.parse(JSON.parse(text));
+        repairs.push(meta);
+      } catch {
+        // skip malformed or missing meta
+      }
+    }
+
+    repairs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return res.json({ repairs });
+  } catch (error) {
+    const invalidSession = invalidSessionMessage(error);
+    if (invalidSession) return res.status(400).json({ error: invalidSession });
+    return res.status(500).json({ error: "LIST_REPAIRS_FAILED" });
+  }
+});
+
 repairRouter.post(
   "/api/repair",
   upload.fields([
@@ -53,6 +86,7 @@ repairRouter.post(
     const start = Date.now();
     let sessionId: string | undefined;
     let repairId: string | undefined;
+    let capId: string | undefined;
     let uploadedReferenceUrl: string | undefined;
     let uploadedTargetUrl: string | undefined;
     let deltaPose: { x: number; y: number; z: number; pitch: number; yaw: number; roll: number } | undefined;
@@ -76,6 +110,8 @@ repairRouter.post(
 
       sessionId = parseSessionId(String(req.body.session_id || ""));
       repairId = String(req.body.repair_id || `repair_${Date.now()}`);
+      const rawCapId = String(req.body.cap_id || "").trim();
+      capId = /^cap_\d{4}$/.test(rawCapId) ? rawCapId : undefined;
 
       deltaPose = deltaPoseSchema.parse(JSON.parse(deltaPoseRaw.buffer.toString("utf8")));
       cameraSchema.parse(JSON.parse(cameraRaw.buffer.toString("utf8")));
@@ -131,6 +167,7 @@ repairRouter.post(
         schema_version: "1.0",
         repair_id: repairId,
         session_id: sessionId,
+        cap_id: capId,
         created_at: new Date(start).toISOString(),
         completed_at: new Date().toISOString(),
         duration_ms: Date.now() - start,
@@ -188,6 +225,7 @@ repairRouter.post(
             schema_version: "1.0",
             repair_id: repairId,
             session_id: sessionId,
+            cap_id: capId,
             created_at: new Date(start).toISOString(),
             completed_at: new Date().toISOString(),
             duration_ms: Date.now() - start,

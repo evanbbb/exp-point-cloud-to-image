@@ -10,6 +10,7 @@ export const repairMetaSchema = z.object({
   schema_version: z.literal("1.0"),
   repair_id: z.string(),
   session_id: z.string(),
+  cap_id: z.string().optional(),
   created_at: z.string(),
   completed_at: z.string(),
   duration_ms: z.number().int().nonnegative(),

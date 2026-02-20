@@ -450,15 +450,13 @@
         </div>
 
         <!-- Source selector -->
-        <div class="row" style="align-items:flex-start;gap:16px;">
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:11px;color:var(--color-text-muted);font-weight:600;min-width:60px;">Source</span>
-              <select id="sourceSelect"></select>
-            </div>
+        <div style="margin-bottom:20px;">
+          <div class="row" style="margin-bottom:8px;">
+            <span style="font-size:11px;color:var(--color-text-muted);font-weight:600;min-width:60px;">Source</span>
+            <select id="sourceSelect"></select>
           </div>
-          <div id="sourceThumbnail" style="display:none;flex-shrink:0;">
-            <div class="capture-card" style="width:160px;cursor:default;">
+          <div id="sourceThumbnail" style="display:none;">
+            <div class="capture-card" style="width:160px;cursor:pointer;">
               <img id="sourceThumbImg" alt="reference" />
               <div class="capture-card-label">
                 <span id="sourceThumbLabel"></span>
@@ -477,6 +475,18 @@
             </div>
           </div>
           <div id="capturesGrid" class="captures-grid"></div>
+        </div>
+
+        <!-- Prompt preview -->
+        <div id="promptPreview" style="display:none;" class="section">
+          <span class="section-label">Prompt Preview — <span id="promptCapId"></span></span>
+          <pre id="promptText" style="margin-top:8px;"></pre>
+        </div>
+
+        <!-- Previous repairs -->
+        <div id="previousRepairs" style="display:none;" class="section">
+          <span class="section-label">Previous Repairs — <span id="prevRepairsCapId"></span></span>
+          <div id="prevRepairsGrid" class="captures-grid" style="margin-top:8px;"></div>
         </div>
 
         <!-- Action bar -->
@@ -506,6 +516,12 @@
       </div>
 
     </main>
+
+    <!-- Lightbox -->
+    <div id="lightboxOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:1000; align-items:center; justify-content:center;">
+      <button id="lightboxClose" style="position:absolute; top:16px; right:16px; background:transparent; border:none; color:#fff; font-size:28px; cursor:pointer; line-height:1; padding:4px 8px;">×</button>
+      <img id="lightboxImg" style="max-width:90vw; max-height:90vh; object-fit:contain; border-radius:4px;" alt="" />
+    </div>
 
     <script type="module" src="repair-app.js"></script>
   </body>
