@@ -31,6 +31,10 @@ Typical flow: run `implementation-executor` first, then `test-writer`.
 
 Before each agent invocation, present the agent name and a one-line reason. Wait for the user to approve (yes), skip, or stop the phase entirely.
 
+## Per-Agent Completion Gate
+
+After each agent runs and produces actionable output (e.g., code to apply, failing tests, suggested fixes), ask the user if they want to implement or address those items before moving to the next agent. Do not advance until they have implemented or explicitly skipped.
+
 ## Output
 
 - Implemented code following the plan

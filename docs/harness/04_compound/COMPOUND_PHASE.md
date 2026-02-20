@@ -31,6 +31,10 @@ Run this skill? (yes / skip / stop)
 
 Before each skill invocation, present the skill name and a one-line reason. Wait for the user to approve (yes), skip, or stop the phase entirely.
 
+## Per-Skill Completion Gate
+
+After each skill runs and produces output (e.g., documentation draft, review feedback), ask the user if they want to incorporate or apply those items before moving to the next skill. Do not advance until they have done so or explicitly skipped.
+
 ## When to Compound
 
 Not every task produces documentation. Compound when:

@@ -24,6 +24,18 @@ Run this agent? (yes / skip / stop)
 
 Never auto-chain agents. Always wait for confirmation between each one.
 
+## Per-Agent Completion Gate
+
+After each agent runs and produces suggestions, issues, or actionable output, **complete those items before moving to the next agent**. Do not advance until the user has had a chance to act.
+
+1. Present the agent's output (issues, suggestions, recommendations)
+2. Ask: "Implement these suggestions before moving to the next agent? (yes / skip / stop)"
+3. **yes**: Help the user implement the suggestions (e.g., loop to Work phase if needed, or implement inline), then proceed to the next agent
+4. **skip**: Move to the next agent without implementing (user declines for now)
+5. **stop**: End the orchestration
+
+Only after the user has implemented (or explicitly skipped) may you present the next agent.
+
 ---
 
 ## Phase 1: Plan
@@ -97,14 +109,20 @@ Proceed to Review phase? (yes / stop)
 | `performance-oracle` | Implementation touches data processing, queries, or scale-sensitive code | `03_review/agents/performance-oracle.md` |
 | `bug-reproduction-validator` | A bug was reported and fixed — verify the fix | `03_review/agents/bug-reproduction-validator.md` |
 
-**If issues are found**: Present them to the user and ask whether to loop back to Work:
+**After each review agent** (before moving to the next): If the agent produced issues or suggestions, present them and pause:
 ```
-Review found issues:
-- [Issue 1]
-- [Issue 2]
+[Agent name] found:
+- [Issue/suggestion 1]
+- [Issue/suggestion 2]
 
-Loop back to Work phase to address these? (yes / skip / stop)
+Implement these suggestions before moving to the next agent? (yes / skip / stop)
 ```
+
+- **yes**: Loop back to Work phase (or implement inline), then return to continue with the next review agent
+- **skip**: Proceed to the next agent without implementing
+- **stop**: End the orchestration
+
+Do not present the next agent until the user has implemented or skipped.
 
 **Phase output**: Reviewed, validated code.
 

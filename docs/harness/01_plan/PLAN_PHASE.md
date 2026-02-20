@@ -40,6 +40,10 @@ Not every agent runs every time. Select based on what the task needs.
 
 Before each agent invocation, present the agent name and a one-line reason. Wait for the user to approve (yes), skip, or stop the phase entirely.
 
+## Per-Agent Completion Gate
+
+After each agent runs and produces actionable output (findings, recommendations, gaps to address), ask the user if they want to incorporate or act on those items before moving to the next agent. Do not advance until they have done so or explicitly skipped.
+
 ## Output
 
 A plan file saved to `docs/plans/` in the consuming project. The plan should include:

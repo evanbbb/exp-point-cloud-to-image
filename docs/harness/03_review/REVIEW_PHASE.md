@@ -34,13 +34,25 @@ Not every agent runs every time. Select based on the nature of the work.
 
 Before each agent invocation, present the agent name and a one-line reason. Wait for the user to approve (yes), skip, or stop the phase entirely.
 
+## Per-Agent Completion Gate
+
+**After each agent runs** — before moving to the next agent — complete that agent's items first. Do not advance to the next agent until the user has had a chance to implement or decline.
+
+1. Present the agent's output (issues, suggestions, recommendations)
+2. Ask: "Implement these suggestions before moving to the next agent? (yes / skip / stop)"
+3. **yes**: Loop back to `02_work/WORK_PHASE.md` to implement (or implement inline), then return and continue with the next review agent
+4. **skip**: Move to the next agent without implementing
+5. **stop**: End the phase
+
+Only after the user has implemented or explicitly skipped may you present the next agent.
+
 ## Handling Issues
 
-If review agents find issues:
+If a review agent finds issues:
 1. Present the issues to the user
-2. Ask whether to loop back to the Work phase to address them
+2. Ask whether to implement before moving on (see Per-Agent Completion Gate above)
 3. If yes, return to `02_work/WORK_PHASE.md` with the issues as input
-4. After fixes, re-run relevant review agents
+4. After fixes, continue with the next review agent (or re-run the current one if needed)
 
 ## Output
 
