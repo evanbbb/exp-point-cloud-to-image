@@ -245,8 +245,7 @@ const generationController = createGenerationController({
   sceneController,
   ensureActiveSourceAspect: async (job) => {
     if (!getActiveSource()) {
-      const fromManifest = String(job?.scene_manifest_path || '').match(/\/source\/(src_\d{4})\//);
-      const sourceId = fromManifest?.[1];
+      const sourceId = sourceIdFromManifestPath(job?.scene_manifest_path);
       if (sourceId && sessionData?.sources?.some(s => s.id === sourceId)) {
         sessionData.active_source = sourceId;
         await writeSessionFile();
@@ -310,12 +309,10 @@ function getLoadedSourceId() {
   return sourceIdFromManifestPath(loadedJob.scene_manifest_path);
 }
 
-async function clearLoadedGeneratedScene({ quiet = false } = {}) {
+async function clearLoadedGeneratedScene({ notify = true } = {}) {
   clearGeneratedScene();
   sessionData.active_loaded_job_id = null;
-  await writeSessionFile();
-  renderJobList();
-  if (!quiet) log('Cleared generated scene from canvas.');
+  if (notify) log('Cleared generated scene from canvas.');
 }
 
 // ── File helpers ──────────────────────────────────────────
@@ -538,9 +535,10 @@ document.getElementById('sourceSelect').onchange = async () => {
   }
   if (!sel.value) {
     sessionData.active_source = null;
-    if (loadedSourceId) await clearLoadedGeneratedScene({ quiet: true });
+    if (loadedSourceId) await clearLoadedGeneratedScene({ notify: false });
     await writeSessionFile();
     renderSourceSelect();
+    renderJobList();
     setImagePlane(null);
     await showSelectedImageMetadata(null);
     return;
@@ -548,11 +546,12 @@ document.getElementById('sourceSelect').onchange = async () => {
   try {
     const file = await loadSourceImageById(sel.value);
     if (loadedSourceId && loadedSourceId !== sel.value) {
-      await clearLoadedGeneratedScene({ quiet: true });
+      await clearLoadedGeneratedScene({ notify: false });
     }
     sessionData.active_source = sel.value;
     await writeSessionFile();
     renderSourceSelect();
+    renderJobList();
     setImagePlane(file);
     await showSelectedImageMetadata(file);
     await writeSessionFile();
@@ -564,6 +563,8 @@ document.getElementById('sourceSelect').onchange = async () => {
 document.getElementById('clearGenerated').onclick = async () => {
   try {
     await clearLoadedGeneratedScene();
+    await writeSessionFile();
+    renderJobList();
   } catch (err) {
     log({ error: String(err) });
   }
@@ -593,11 +594,12 @@ document.getElementById('refFile').onchange = async () => {
     sessionData.sources.push({ id: srcId, filename: file.name });
     const loadedSourceId = getLoadedSourceId();
     if (loadedSourceId && loadedSourceId !== srcId) {
-      await clearLoadedGeneratedScene({ quiet: true });
+      await clearLoadedGeneratedScene({ notify: false });
     }
     sessionData.active_source = srcId;
     await writeSessionFile();
     renderSourceSelect();
+    renderJobList();
     // Load into 3D scene
     setImagePlane(file);
     await showSelectedImageMetadata(file);
