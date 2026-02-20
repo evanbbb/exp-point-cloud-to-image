@@ -21,6 +21,22 @@ function closeLightbox() {
   document.getElementById('lightboxImg').src = '';
 }
 
+// ── Compare overlay ─────────────────────────────────────────
+
+function openCompare(sourceUrl, targetUrl, repairedUrl) {
+  document.getElementById('compareSourceImg').src = sourceUrl;
+  document.getElementById('compareCaptureImg').src = targetUrl;
+  document.getElementById('compareRepairImg').src = repairedUrl;
+  document.getElementById('compareOverlay').style.display = 'flex';
+}
+
+function closeCompare() {
+  document.getElementById('compareOverlay').style.display = 'none';
+  ['compareSourceImg', 'compareCaptureImg', 'compareRepairImg'].forEach(id => {
+    document.getElementById(id).src = '';
+  });
+}
+
 // ── UI helpers ──────────────────────────────────────────────
 
 function setUIState(state) {
@@ -270,6 +286,18 @@ async function updatePreviousRepairs() {
       if (imgUrl) {
         card.querySelector('img').onclick = (e) => { e.stopPropagation(); openLightbox(imgUrl); };
       }
+      if (imgUrl && cap) {
+        const labelEl = card.querySelector('.capture-card-label');
+        const compareBtn = document.createElement('button');
+        compareBtn.className = 'icon-btn compare-trigger';
+        compareBtn.title = 'Compare source / capture / repair';
+        compareBtn.innerHTML = '<i class="ph ph-eye"></i>';
+        compareBtn.onclick = (e) => {
+          e.stopPropagation();
+          openCompare(sourceThumbUrl, cap.targetUrl, imgUrl);
+        };
+        labelEl.insertBefore(compareBtn, labelEl.children[1]);
+      }
       grid.appendChild(card);
     }
   } catch {
@@ -403,6 +431,16 @@ async function runRepairs() {
       const folderPath = `${sessionData.session_id}/repairs/${repairId}/output`;
       meta.innerHTML = `${repairId} — ${sizeMb} MB &nbsp;<button class="icon-btn" style="font-size:11px;padding:2px 6px;" data-open-folder="${folderPath}" title="Open in Finder"><i class="ph ph-folder-open" aria-hidden="true"></i></button>`;
 
+      const compareBtn = document.createElement('button');
+      compareBtn.className = 'icon-btn compare-trigger';
+      compareBtn.title = 'Compare source / capture / repair';
+      compareBtn.innerHTML = '<i class="ph ph-eye"></i>';
+      compareBtn.onclick = (e) => {
+        e.stopPropagation();
+        openCompare(sourceThumbUrl, cap.targetUrl, repairedUrl);
+      };
+      card.querySelector('.result-info').appendChild(compareBtn);
+
       log(`${cap.capId} repaired successfully.`);
     } catch (err) {
       // Update card to failed
@@ -500,6 +538,11 @@ document.getElementById('lightboxOverlay').onclick = (e) => {
   if (e.target === e.currentTarget) closeLightbox();
 };
 document.getElementById('lightboxClose').onclick = closeLightbox;
+
+document.getElementById('compareOverlay').onclick = (e) => {
+  if (e.target === e.currentTarget) closeCompare();
+};
+document.getElementById('compareClose').onclick = closeCompare;
 
 document.getElementById('resultsList').onclick = async (event) => {
   const btn = event.target.closest('[data-open-folder]');

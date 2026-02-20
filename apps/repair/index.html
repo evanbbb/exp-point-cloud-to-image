@@ -405,6 +405,18 @@
         color: var(--color-text-muted);
         margin-top: 12px;
       }
+
+      .compare-trigger {
+        opacity: 0;
+        transition: opacity 0.15s;
+        font-size: 10px;
+        padding: 2px 7px;
+        color: var(--color-text-muted);
+      }
+      .capture-card:hover .compare-trigger,
+      .result-card:hover .compare-trigger {
+        opacity: 1;
+      }
     </style>
   </head>
   <body>
@@ -521,6 +533,25 @@
     <div id="lightboxOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:1000; align-items:center; justify-content:center;">
       <button id="lightboxClose" style="position:absolute; top:16px; right:16px; background:transparent; border:none; color:#fff; font-size:28px; cursor:pointer; line-height:1; padding:4px 8px;">×</button>
       <img id="lightboxImg" style="max-width:90vw; max-height:90vh; object-fit:contain; border-radius:4px;" alt="" />
+    </div>
+
+    <!-- Compare overlay -->
+    <div id="compareOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:1001; flex-direction:column; align-items:center; justify-content:center; gap:20px;">
+      <button id="compareClose" style="position:absolute; top:16px; right:16px; background:transparent; border:none; color:#fff; font-size:28px; cursor:pointer; line-height:1; padding:4px 8px;">×</button>
+      <div style="display:flex; gap:20px; align-items:flex-start; max-width:95vw; overflow-x:auto;">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:8px; flex-shrink:0;">
+          <span style="font-size:10px; font-weight:700; color:#A0A0A0; text-transform:uppercase; letter-spacing:0.08em;">Source</span>
+          <img id="compareSourceImg" style="max-width:28vw; max-height:78vh; object-fit:contain; border-radius:4px;" alt="source" />
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:8px; flex-shrink:0;">
+          <span style="font-size:10px; font-weight:700; color:#A0A0A0; text-transform:uppercase; letter-spacing:0.08em;">Capture</span>
+          <img id="compareCaptureImg" style="max-width:28vw; max-height:78vh; object-fit:contain; border-radius:4px;" alt="capture" />
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:8px; flex-shrink:0;">
+          <span style="font-size:10px; font-weight:700; color:#A0A0A0; text-transform:uppercase; letter-spacing:0.08em;">Repair</span>
+          <img id="compareRepairImg" style="max-width:28vw; max-height:78vh; object-fit:contain; border-radius:4px;" alt="repair" />
+        </div>
+      </div>
     </div>
 
     <script type="module" src="repair-app.js"></script>
