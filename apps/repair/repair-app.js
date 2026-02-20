@@ -273,9 +273,9 @@ async function updatePreviousRepairs() {
     for (const repair of repairs) {
       const card = document.createElement('div');
       card.className = 'capture-card';
-      const bucket = sessionData.session_bucket ? `${sessionData.session_bucket}/` : '';
+      const base = sessionData.session_bucket || repair.session_id;
       const imgUrl = repair.output
-        ? `/shots/${bucket}${repair.session_id}/repairs/${repair.repair_id}/output/repaired.png`
+        ? `/shots/${base}/repairs/${repair.repair_id}/output/repaired.png`
         : null;
       const dt = new Date(repair.created_at);
       const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
@@ -312,7 +312,7 @@ async function updatePreviousRepairs() {
       folderBtn.innerHTML = '<i class="ph ph-folder-open"></i>';
       folderBtn.onclick = async (e) => {
         e.stopPropagation();
-        const relPath = `${bucket}${repair.session_id}/repairs/${repair.repair_id}/output`;
+        const relPath = `${base}/repairs/${repair.repair_id}/output`;
         try {
           await fetch('/api/open-folder', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rel_path: relPath }) });
         } catch (err) { log({ error: `Failed to open folder: ${err}` }); }

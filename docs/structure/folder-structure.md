@@ -13,16 +13,18 @@ This document reflects the current code path in `apps/viewer` + `apps/server`.
 
 ## Session root layout in `shots/`
 
-Session roots can be either:
+A session root is determined by `sessionBaseRelativePath()` in `apps/server/src/lib/paths.ts`:
 
-- `shots/SESSION_YYYYMMDD_HHMMSS/`
-- `shots/<session_bucket>/SESSION_YYYYMMDD_HHMMSS/` (if `session_bucket` is set)
+- **With bucket** (typical): `shots/<session_bucket>/` — the bucket name is the root. No `SESSION_*` nesting.
+- **Without bucket** (bare): `shots/SESSION_YYYYMMDD_HHMMSS/`
 
-Within each session:
+The bucket name comes from the directory the user picks in the browser. If the picked directory name matches `SESSION_YYYYMMDD_HHMMSS`, it's treated as no-bucket (bare). Otherwise, the directory name becomes the bucket (e.g. `Feb19`, `Feb20`).
+
+Within each session root:
 
 ```text
-SESSION_.../
-  istanbul3d_session.json
+<session_root>/
+  istanbul3d_session.json      (written by browser via File System Access API)
   source/
     src_0001/
       <reference-image-filename>.png|jpg|...
@@ -45,6 +47,14 @@ SESSION_.../
         repaired.png           (success path)
         repair_meta.json       (success and failure paths)
 ```
+
+### Path construction
+
+All server-side paths flow through `sessionBaseRelativePath(sessionId, sessionBucket)`:
+- Returns `sessionBucket` when present (flat layout)
+- Returns `sessionId` when no bucket (bare layout)
+
+Client-side (repair-app) image URLs use the same logic: `const base = sessionData.session_bucket || repair.session_id`.
 
 ## Ownership and write paths
 

@@ -30,5 +30,5 @@ export function parseSessionBucket(value: string): string | null {
 }
 
 export function sessionBaseRelativePath(sessionId: string, sessionBucket: string | null): string {
-  return sessionBucket ? `${sessionBucket}/${sessionId}` : sessionId;
+  return sessionBucket || sessionId;
 }
