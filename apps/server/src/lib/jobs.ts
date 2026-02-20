@@ -2,16 +2,21 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { GenerateJob } from "../../../../shared/schemas/generate-job";
 import { config } from "./config";
-import { resolveWithin } from "./paths";
+import { resolveWithin, sessionBaseRelativePath } from "./paths";
 
-export async function upsertJob(sessionId: string, job: GenerateJob): Promise<void> {
-  const jobsDir = resolveWithin(config.shotsRoot, `${sessionId}/generation/jobs`);
+function jobsDirFor(sessionId: string, sessionBucket: string | null): string {
+  const sessionRel = sessionBaseRelativePath(sessionId, sessionBucket);
+  return resolveWithin(config.shotsRoot, `${sessionRel}/generation/jobs`);
+}
+
+export async function upsertJob(sessionId: string, sessionBucket: string | null, job: GenerateJob): Promise<void> {
+  const jobsDir = jobsDirFor(sessionId, sessionBucket);
   await fs.mkdir(jobsDir, { recursive: true });
   await fs.writeFile(path.join(jobsDir, `${job.job_id}.json`), JSON.stringify(job, null, 2));
 }
 
-export async function loadJob(sessionId: string, jobId: string): Promise<GenerateJob | null> {
-  const jobPath = resolveWithin(config.shotsRoot, `${sessionId}/generation/jobs/${jobId}.json`);
+export async function loadJob(sessionId: string, sessionBucket: string | null, jobId: string): Promise<GenerateJob | null> {
+  const jobPath = resolveWithin(jobsDirFor(sessionId, sessionBucket), `${jobId}.json`);
   try {
     const raw = await fs.readFile(jobPath, "utf8");
     return JSON.parse(raw) as GenerateJob;
@@ -20,8 +25,8 @@ export async function loadJob(sessionId: string, jobId: string): Promise<Generat
   }
 }
 
-export async function findInFlightJob(sessionId: string): Promise<GenerateJob | null> {
-  const jobsDir = resolveWithin(config.shotsRoot, `${sessionId}/generation/jobs`);
+export async function findInFlightJob(sessionId: string, sessionBucket: string | null): Promise<GenerateJob | null> {
+  const jobsDir = jobsDirFor(sessionId, sessionBucket);
   try {
     const names = await fs.readdir(jobsDir);
     for (const name of names) {
@@ -38,8 +43,8 @@ export async function findInFlightJob(sessionId: string): Promise<GenerateJob | 
   return null;
 }
 
-export async function findCompletedJob(sessionId: string): Promise<GenerateJob | null> {
-  const jobsDir = resolveWithin(config.shotsRoot, `${sessionId}/generation/jobs`);
+export async function findCompletedJob(sessionId: string, sessionBucket: string | null): Promise<GenerateJob | null> {
+  const jobsDir = jobsDirFor(sessionId, sessionBucket);
   try {
     const names = await fs.readdir(jobsDir);
     let best: GenerateJob | null = null;

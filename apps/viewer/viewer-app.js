@@ -28,6 +28,12 @@ function generateSessionId() {
   return `SESSION_${date}_${time}`;
 }
 
+function inferSessionBucketFromDirName(dirName) {
+  const name = String(dirName || '').trim();
+  if (!name || /^SESSION_\d{8}_\d{6}$/.test(name)) return null;
+  return name;
+}
+
 async function readSessionFile(dirHandle) {
   try {
     const fh = await dirHandle.getFileHandle(SESSION_FILE);
@@ -161,7 +167,14 @@ async function pickFolder() {
     const existing = await readSessionFile(dirHandle);
     if (existing) {
       sessionData = existing;
+      if (!Object.prototype.hasOwnProperty.call(sessionData, 'session_bucket')) {
+        sessionData.session_bucket = inferSessionBucketFromDirName(dirHandle.name);
+        await writeSessionFile();
+      }
       await migrateLegacySession();
+      // Always open in a neutral state on reload; user explicitly picks a source.
+      sessionData.active_source = null;
+      await writeSessionFile();
       activateSession('Loaded existing session.');
     } else {
       document.getElementById('confirmFolderName').textContent = dirHandle.name;
@@ -176,6 +189,7 @@ async function initializeSession() {
   try {
     sessionData = {
       session_id: generateSessionId(),
+      session_bucket: inferSessionBucketFromDirName(sessionDirHandle?.name),
       created_at: new Date().toISOString(),
       sources: [],
       active_source: null,
@@ -194,11 +208,14 @@ async function initializeSession() {
 
 function activateSession(message) {
   document.getElementById('sessionDisplay').textContent = sessionData.session_id;
+  const imageToggle = document.getElementById('toggleImage');
+  if (imageToggle) imageToggle.checked = true;
   renderSourceSelect();
   renderJobList();
   setUIState('ready');
   initScene();
   clearGeneratedScene();
+  setImagePlaneVisible(true);
   setImagePlane(null);
   setAspectGuideAspect(null);
   if (sessionData.jobs?.some(j => j.status !== 'failed' && j.status !== 'completed' && j.status !== 'complete')) {
@@ -236,6 +253,15 @@ const generationController = createGenerationController({
         renderSourceSelect();
       }
     }
+    const activeSource = getActiveSource();
+    const imageToggle = document.getElementById('toggleImage');
+    const shouldShowImage = !(imageToggle instanceof HTMLInputElement) || imageToggle.checked;
+    if (activeSource && shouldShowImage) {
+      const sourceFile = await loadSourceImageById(activeSource.id);
+      setImagePlane(sourceFile);
+    } else if (!shouldShowImage) {
+      setImagePlane(null);
+    }
     const aspect = await getActiveSourceAspect();
     setAspectGuideAspect(aspect);
   }
@@ -254,6 +280,7 @@ const {
   initScene,
   clearGeneratedScene,
   setImagePlane,
+  setImagePlaneVisible,
   ensureCompletionAudioContext,
   updateShotCamera,
   setControlsCamera,
@@ -263,10 +290,33 @@ const {
   fitShotCameraToGeneratedScene,
   getCameraJsonWithAspect,
   getDeltaPoseJson,
+  captureCurrentViewPng,
+  getLoadedGeneratedJobId,
   setOriginalPose,
   goToOriginalPose,
   setAspectGuideAspect
 } = sceneController;
+
+function sourceIdFromManifestPath(manifestPath) {
+  const match = String(manifestPath || '').match(/\/source\/(src_\d{4})\//);
+  return match?.[1] || null;
+}
+
+function getLoadedSourceId() {
+  const loadedJobId = getLoadedGeneratedJobId();
+  if (!loadedJobId || !sessionData?.jobs?.length) return null;
+  const loadedJob = sessionData.jobs.find(j => j.job_id === loadedJobId);
+  if (!loadedJob?.scene_manifest_path) return null;
+  return sourceIdFromManifestPath(loadedJob.scene_manifest_path);
+}
+
+async function clearLoadedGeneratedScene({ quiet = false } = {}) {
+  clearGeneratedScene();
+  sessionData.active_loaded_job_id = null;
+  await writeSessionFile();
+  renderJobList();
+  if (!quiet) log('Cleared generated scene from canvas.');
+}
 
 // ── File helpers ──────────────────────────────────────────
 
@@ -351,31 +401,6 @@ async function getActiveSourceAspect() {
   return dims.width / dims.height;
 }
 
-async function captureCanvasAtAspect(canvas, targetAspect) {
-  const sourceW = canvas.width;
-  const sourceH = canvas.height;
-  const sourceAspect = sourceW / sourceH;
-  if (!Number.isFinite(targetAspect) || targetAspect <= 0 || Math.abs(sourceAspect - targetAspect) < 0.0001) {
-    return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-  }
-  let cropW = sourceW;
-  let cropH = sourceH;
-  if (targetAspect > sourceAspect) {
-    cropH = Math.max(1, Math.round(sourceW / targetAspect));
-  } else {
-    cropW = Math.max(1, Math.round(sourceH * targetAspect));
-  }
-  const sx = Math.max(0, Math.floor((sourceW - cropW) / 2));
-  const sy = Math.max(0, Math.floor((sourceH - cropH) / 2));
-  const out = document.createElement('canvas');
-  out.width = cropW;
-  out.height = cropH;
-  const ctx = out.getContext('2d');
-  if (!ctx) throw new Error('Failed to initialize 2D context for capture crop.');
-  ctx.drawImage(canvas, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
-  return new Promise((resolve) => out.toBlob(resolve, 'image/png'));
-}
-
 async function readJsonResponse(res, label) {
   const raw = await res.text();
   let data;
@@ -414,6 +439,7 @@ document.getElementById('start').onclick = async () => {
 
     const syncForm = new FormData();
     syncForm.append('session_id', sessionData.session_id);
+    if (sessionData.session_bucket) syncForm.append('session_bucket', sessionData.session_bucket);
     syncForm.append('source_id', activeSource.id);
     syncForm.append('filename', activeSource.filename);
     syncForm.append('reference', sourceFile, activeSource.filename);
@@ -431,6 +457,7 @@ document.getElementById('start').onclick = async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         session_id: sessionData.session_id,
+        session_bucket: sessionData.session_bucket || undefined,
         reference_image_path: syncData.reference_image_path,
         force_regenerate: false
       })
@@ -460,17 +487,6 @@ document.getElementById('start').onclick = async () => {
   }
 };
 
-document.getElementById('poll').onclick = async () => {
-  try {
-    const data = await pollLatestJob();
-    if (!data) return;
-    if (data.status !== 'completed' && data.status !== 'failed') startAutoPoll();
-    log(data);
-  } catch (err) {
-    log({ error: String(err) });
-  }
-};
-
 document.getElementById('jobList').onclick = async (event) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
@@ -492,8 +508,11 @@ document.getElementById('jobList').onclick = async (event) => {
   if (!jobId) return;
   if (!confirm(`Cancel generation job ${jobId}?`)) return;
   try {
+    const query = `session_id=${encodeURIComponent(sessionData.session_id)}${
+      sessionData.session_bucket ? `&session_bucket=${encodeURIComponent(sessionData.session_bucket)}` : ''
+    }`;
     const res = await fetch(
-      `/api/generate/${encodeURIComponent(jobId)}/cancel?session_id=${encodeURIComponent(sessionData.session_id)}`,
+      `/api/generate/${encodeURIComponent(jobId)}/cancel?${query}`,
       { method: 'POST' }
     );
     const data = await readJsonResponse(res, 'Cancel generation');
@@ -510,6 +529,7 @@ document.getElementById('jobList').onclick = async (event) => {
 
 document.getElementById('sourceSelect').onchange = async () => {
   const sel = document.getElementById('sourceSelect');
+  const loadedSourceId = getLoadedSourceId();
   if (sel.value === '__new__') {
     document.getElementById('refFile').click();
     // Reset to previous selection while file picker is open
@@ -518,6 +538,7 @@ document.getElementById('sourceSelect').onchange = async () => {
   }
   if (!sel.value) {
     sessionData.active_source = null;
+    if (loadedSourceId) await clearLoadedGeneratedScene({ quiet: true });
     await writeSessionFile();
     renderSourceSelect();
     setImagePlane(null);
@@ -526,6 +547,9 @@ document.getElementById('sourceSelect').onchange = async () => {
   }
   try {
     const file = await loadSourceImageById(sel.value);
+    if (loadedSourceId && loadedSourceId !== sel.value) {
+      await clearLoadedGeneratedScene({ quiet: true });
+    }
     sessionData.active_source = sel.value;
     await writeSessionFile();
     renderSourceSelect();
@@ -535,6 +559,20 @@ document.getElementById('sourceSelect').onchange = async () => {
   } catch (err) {
     log({ error: String(err) });
   }
+};
+
+document.getElementById('clearGenerated').onclick = async () => {
+  try {
+    await clearLoadedGeneratedScene();
+  } catch (err) {
+    log({ error: String(err) });
+  }
+};
+
+document.getElementById('toggleImage').onchange = (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  setImagePlaneVisible(target.checked);
 };
 
 document.getElementById('refFile').onchange = async () => {
@@ -553,6 +591,10 @@ document.getElementById('refFile').onchange = async () => {
     await writeBlobFile(srcDir, file.name, file);
     if (!sessionData.sources) sessionData.sources = [];
     sessionData.sources.push({ id: srcId, filename: file.name });
+    const loadedSourceId = getLoadedSourceId();
+    if (loadedSourceId && loadedSourceId !== srcId) {
+      await clearLoadedGeneratedScene({ quiet: true });
+    }
     sessionData.active_source = srcId;
     await writeSessionFile();
     renderSourceSelect();
@@ -569,9 +611,19 @@ document.getElementById('refFile').onchange = async () => {
 
 document.getElementById('capture').onclick = async () => {
   try {
-    const activeSource = getActiveSource();
+    if (!sessionDirHandle) {
+      log('Pick or re-pick the session folder first.');
+      return;
+    }
+    log('Capturing view...');
+    let activeSource = getActiveSource();
+    if (!activeSource && sessionData?.sources?.length === 1) {
+      sessionData.active_source = sessionData.sources[0].id;
+      await writeSessionFile();
+      renderSourceSelect();
+      activeSource = getActiveSource();
+    }
     if (!activeSource) { log('No source selected. Upload an image first.'); return; }
-    const canvas = document.getElementById('scene');
     const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
     const srcDir = await sourceDir.getDirectoryHandle(activeSource.id);
     const capturesDir = await srcDir.getDirectoryHandle('captures', { create: true });
@@ -579,7 +631,7 @@ document.getElementById('capture').onclick = async () => {
     const capDir = await capturesDir.getDirectoryHandle(capName, { create: true });
     const captureAspect = await getActiveSourceAspect();
     if (captureAspect) setAspectGuideAspect(captureAspect);
-    const targetBlob = await captureCanvasAtAspect(canvas, captureAspect);
+    const targetBlob = await captureCurrentViewPng(captureAspect);
     if (!targetBlob) throw new Error('Failed to encode canvas PNG.');
     const cameraJson = JSON.stringify(getCameraJsonWithAspect(captureAspect), null, 2);
     const deltaJson = JSON.stringify(getDeltaPoseJson(), null, 2);
@@ -595,6 +647,7 @@ document.getElementById('capture').onclick = async () => {
     try {
       const syncForm = new FormData();
       syncForm.append('session_id', sessionData.session_id);
+      if (sessionData.session_bucket) syncForm.append('session_bucket', sessionData.session_bucket);
       syncForm.append('source_id', activeSource.id);
       syncForm.append('capture_id', capName);
       syncForm.append('open_finder', '1');

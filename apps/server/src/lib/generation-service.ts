@@ -5,7 +5,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { generateRequestSchema, type GenerateJob } from "../../../../shared/schemas/generate-job";
 import { config } from "./config";
 import { findCompletedJob, findInFlightJob, loadJob, upsertJob } from "./jobs";
-import { parseSessionId, resolveWithin, toRepoRelative } from "./paths";
+import { parseSessionBucket, parseSessionId, resolveWithin, sessionBaseRelativePath } from "./paths";
 
 const MAX_LOG_TAIL = 200;
 const activeGenerationProcesses = new Map<string, ChildProcess>();
@@ -34,6 +34,19 @@ function inferProgressFromLog(line: string, current: number): number {
   return current;
 }
 
+function toShotsAssetPath(absolutePath: string): string {
+  const rel = path.relative(config.shotsRoot, absolutePath).split(path.sep).join("/");
+  return `shots/${rel}`;
+}
+
+function resolveReferenceImagePath(referenceImagePath: string): string {
+  const normalized = String(referenceImagePath ?? "").replace(/^\/+/, "");
+  if (normalized.startsWith("shots/")) {
+    return resolveWithin(config.shotsRoot, normalized.slice("shots/".length));
+  }
+  return resolveWithin(config.repoRoot, normalized);
+}
+
 async function writeRealManifest(referencePath: string, plyAbsPath: string): Promise<string> {
   const refDir = path.dirname(referencePath);
   const manifestPath = path.join(refDir, "scene", "manifest.json");
@@ -44,13 +57,13 @@ async function writeRealManifest(referencePath: string, plyAbsPath: string): Pro
       {
         version: "1.0",
         generated_at: nowIso(),
-        ply_path: toRepoRelative(config.repoRoot, plyAbsPath)
+        ply_path: toShotsAssetPath(plyAbsPath)
       },
       null,
       2
     )
   );
-  return toRepoRelative(config.repoRoot, manifestPath);
+  return toShotsAssetPath(manifestPath);
 }
 
 function runMlSharp(
@@ -142,8 +155,9 @@ export async function startGeneration(input: unknown): Promise<{
 }> {
   const body = generateRequestSchema.parse(input ?? {});
   const sessionId = parseSessionId(body.session_id);
-  const sessionRoot = resolveWithin(config.shotsRoot, `${sessionId}`);
-  const referencePath = resolveWithin(config.repoRoot, body.reference_image_path);
+  const sessionBucket = parseSessionBucket(body.session_bucket ?? "");
+  const sessionRoot = resolveWithin(config.shotsRoot, sessionBaseRelativePath(sessionId, sessionBucket));
+  const referencePath = resolveReferenceImagePath(body.reference_image_path);
   if (!referencePath.startsWith(sessionRoot + path.sep)) {
     throw new Error("INVALID_SESSION_PATH");
   }
@@ -155,7 +169,7 @@ export async function startGeneration(input: unknown): Promise<{
     const manifestPath = path.join(refDir, "scene", "manifest.json");
     try {
       await fs.access(manifestPath);
-      const completed = await findCompletedJob(sessionId);
+      const completed = await findCompletedJob(sessionId, sessionBucket);
       if (completed) {
         return {
           job_id: completed.job_id,
@@ -168,7 +182,7 @@ export async function startGeneration(input: unknown): Promise<{
       // No completed manifest yet; continue with normal flow.
     }
 
-    const existing = await findInFlightJob(sessionId);
+    const existing = await findInFlightJob(sessionId, sessionBucket);
     if (existing) {
       return {
         job_id: existing.job_id,
@@ -184,6 +198,7 @@ export async function startGeneration(input: unknown): Promise<{
   let job: GenerateJob = {
     job_id: jobId,
     session_id: sessionId,
+    session_bucket: sessionBucket ?? undefined,
     status: "queued",
     stage: "queued",
     progress_percent: 0,
@@ -191,7 +206,7 @@ export async function startGeneration(input: unknown): Promise<{
     updated_at: createdAt
   };
 
-  await upsertJob(sessionId, job);
+  await upsertJob(sessionId, sessionBucket, job);
 
   setImmediate(async () => {
     let writeChain = Promise.resolve();
@@ -200,7 +215,7 @@ export async function startGeneration(input: unknown): Promise<{
         ...job,
         logs_tail: job.logs_tail ? [...job.logs_tail] : undefined
       };
-      writeChain = writeChain.then(() => upsertJob(sessionId, snapshot)).catch(() => undefined);
+      writeChain = writeChain.then(() => upsertJob(sessionId, sessionBucket, snapshot)).catch(() => undefined);
       return writeChain;
     };
 
@@ -274,14 +289,24 @@ export async function startGeneration(input: unknown): Promise<{
   };
 }
 
-export async function getGenerationStatus(sessionIdRaw: string, jobId: string): Promise<GenerateJob | null> {
+export async function getGenerationStatus(
+  sessionIdRaw: string,
+  sessionBucketRaw: string,
+  jobId: string
+): Promise<GenerateJob | null> {
   const sessionId = parseSessionId(sessionIdRaw);
-  return loadJob(sessionId, jobId);
+  const sessionBucket = parseSessionBucket(sessionBucketRaw);
+  return loadJob(sessionId, sessionBucket, jobId);
 }
 
-export async function cancelGeneration(sessionIdRaw: string, jobId: string): Promise<GenerateJob | null> {
+export async function cancelGeneration(
+  sessionIdRaw: string,
+  sessionBucketRaw: string,
+  jobId: string
+): Promise<GenerateJob | null> {
   const sessionId = parseSessionId(sessionIdRaw);
-  const existing = await loadJob(sessionId, jobId);
+  const sessionBucket = parseSessionBucket(sessionBucketRaw);
+  const existing = await loadJob(sessionId, sessionBucket, jobId);
   if (!existing) return null;
 
   if (existing.status === "completed" || existing.status === "failed") {
@@ -304,7 +329,7 @@ export async function cancelGeneration(sessionIdRaw: string, jobId: string): Pro
   };
 
   cancelRequestedJobs.add(jobId);
-  await upsertJob(sessionId, updated);
+  await upsertJob(sessionId, sessionBucket, updated);
 
   const child = activeGenerationProcesses.get(jobId);
   if (child) {

@@ -19,3 +19,16 @@ export function parseSessionId(value: string): string {
   }
   return value;
 }
+
+export function parseSessionBucket(value: string): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (!/^[A-Za-z0-9._-]+$/.test(raw)) {
+    throw new Error("INVALID_SESSION_BUCKET");
+  }
+  return raw;
+}
+
+export function sessionBaseRelativePath(sessionId: string, sessionBucket: string | null): string {
+  return sessionBucket ? `${sessionBucket}/${sessionId}` : sessionId;
+}

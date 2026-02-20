@@ -90,6 +90,10 @@
 
         <div class="row">
           <select id="sourceSelect"><option value="">Select image</option></select>
+          <label class="toggle-inline" for="toggleImage">
+            <input id="toggleImage" type="checkbox" checked />
+            <span>Show Image</span>
+          </label>
           <input id="refFile" type="file" accept="image/*" style="display:none" />
           <span id="refFileName" class="typography-label"></span>
           <span id="refFileDims" class="typography-label" style="display:none"></span>
@@ -167,7 +171,7 @@
           <div class="section-label">Generation</div>
           <div class="row">
             <button id="start">Start Generation</button>
-            <button id="poll">Poll Latest Job</button>
+            <button id="clearGenerated">Unload Scene</button>
           </div>
           <div id="jobList" class="job-list">
             <span class="typography-caption">No generation jobs yet.</span>

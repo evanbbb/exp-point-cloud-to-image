@@ -8,6 +8,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
 
   let renderer, scene, orbitCamera, shotCamera, cameraHelper, controls;
   let imagePlane = null;
+  let imagePlaneVisible = true;
   let generatedSceneObject = null;
   let loadedGeneratedJobId = null;
   let sceneReady = false;
@@ -337,7 +338,12 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
 
     const canvas = document.getElementById('scene');
 
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      // Keep the back buffer available for reliable canvas capture exports.
+      preserveDrawingBuffer: true
+    });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x1a1a1a);
 
@@ -410,8 +416,16 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
       imagePlane = new THREE.Mesh(geo, mat);
       imagePlane.position.set(0, h / 2, 0);
+      imagePlane.visible = imagePlaneVisible;
       scene.add(imagePlane);
     });
+  }
+
+  function setImagePlaneVisible(nextVisible) {
+    imagePlaneVisible = Boolean(nextVisible);
+    if (imagePlane) {
+      imagePlane.visible = imagePlaneVisible;
+    }
   }
 
   function setShotBaselineFromCurrent() {
@@ -535,6 +549,87 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     refreshAspectGuide();
   }
 
+  function canvasToPngBlob(canvas) {
+    return new Promise((resolve, reject) =>
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Failed to encode PNG.'))), 'image/png')
+    );
+  }
+
+  function looksUniform(canvas) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return false;
+    const w = canvas.width;
+    const h = canvas.height;
+    if (!w || !h) return true;
+    const sampleCols = 8;
+    const sampleRows = 8;
+    let minL = 255;
+    let maxL = 0;
+    let hasAlpha = false;
+    for (let yi = 0; yi < sampleRows; yi += 1) {
+      for (let xi = 0; xi < sampleCols; xi += 1) {
+        const x = Math.min(w - 1, Math.floor((xi / (sampleCols - 1)) * (w - 1)));
+        const y = Math.min(h - 1, Math.floor((yi / (sampleRows - 1)) * (h - 1)));
+        const px = ctx.getImageData(x, y, 1, 1).data;
+        const lum = Math.round((px[0] + px[1] + px[2]) / 3);
+        minL = Math.min(minL, lum);
+        maxL = Math.max(maxL, lum);
+        if (px[3] > 0) hasAlpha = true;
+      }
+    }
+    // Treat near-solid frames (esp. full black/transparent) as suspicious.
+    return !hasAlpha || maxL - minL <= 2;
+  }
+
+  async function captureCurrentViewPng(targetAspect) {
+    if (!renderer || !scene || !orbitCamera || !shotCamera) {
+      throw new Error('Scene is not ready for capture.');
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      // Force a fresh render immediately before reading pixels.
+      controls?.update();
+      cameraHelper.visible = getActiveCameraMode() !== 'shot';
+      renderer.render(scene, getActiveRenderCamera());
+
+      const source = renderer.domElement;
+      const sourceW = source.width;
+      const sourceH = source.height;
+      if (!sourceW || !sourceH) {
+        throw new Error('Capture canvas has invalid dimensions.');
+      }
+
+      const sourceAspect = sourceW / sourceH;
+      let out = source;
+      if (Number.isFinite(targetAspect) && targetAspect > 0 && Math.abs(sourceAspect - targetAspect) >= 0.0001) {
+        let cropW = sourceW;
+        let cropH = sourceH;
+        if (targetAspect > sourceAspect) {
+          cropH = Math.max(1, Math.round(sourceW / targetAspect));
+        } else {
+          cropW = Math.max(1, Math.round(sourceH * targetAspect));
+        }
+        const sx = Math.max(0, Math.floor((sourceW - cropW) / 2));
+        const sy = Math.max(0, Math.floor((sourceH - cropH) / 2));
+        out = document.createElement('canvas');
+        out.width = cropW;
+        out.height = cropH;
+        const ctx = out.getContext('2d');
+        if (!ctx) throw new Error('Failed to initialize 2D context for capture crop.');
+        ctx.drawImage(source, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+      }
+
+      if (attempt === 0 && looksUniform(out)) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        continue;
+      }
+
+      return canvasToPngBlob(out);
+    }
+
+    throw new Error('Failed to capture non-uniform frame.');
+  }
+
   function getCameraJson() {
     const canvas = document.getElementById('scene');
     const lensPreset = document.getElementById('lensPreset');
@@ -576,6 +671,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     initScene,
     clearGeneratedScene,
     setImagePlane,
+    setImagePlaneVisible,
     loadGeneratedSceneFromJob,
     fitShotCameraToGeneratedScene,
     updateShotCamera,
@@ -586,6 +682,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     getCameraJson,
     getCameraJsonWithAspect,
     getDeltaPoseJson,
+    captureCurrentViewPng,
     getLoadedGeneratedJobId: () => loadedGeneratedJobId,
     hasGeneratedScene: () => Boolean(generatedSceneObject),
     ensureCompletionAudioContext,

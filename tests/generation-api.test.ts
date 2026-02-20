@@ -23,7 +23,7 @@ async function ensureReference() {
 async function waitForTerminalStatus(jobId: string, timeoutMs = 180000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const status = await getGenerationStatus(sessionId, jobId);
+    const status = await getGenerationStatus(sessionId, "", jobId);
     if (status && (status.status === "completed" || status.status === "failed")) {
       return status;
     }
@@ -81,8 +81,8 @@ test("cancelGeneration marks queued job as cancelled", async () => {
     created_at: now,
     updated_at: now
   };
-  await upsertJob(sessionId, queued);
-  const cancelled = await cancelGeneration(sessionId, jobId);
+  await upsertJob(sessionId, null, queued);
+  const cancelled = await cancelGeneration(sessionId, "", jobId);
   assert.ok(cancelled);
   if (!cancelled) throw new Error("Expected cancelled job");
   assert.equal(cancelled.status, "failed");
@@ -102,8 +102,8 @@ test("cancelGeneration returns terminal job unchanged", async () => {
     created_at: now,
     updated_at: now
   };
-  await upsertJob(sessionId, completed);
-  const result = await cancelGeneration(sessionId, jobId);
+  await upsertJob(sessionId, null, completed);
+  const result = await cancelGeneration(sessionId, "", jobId);
   assert.ok(result);
   if (!result) throw new Error("Expected job");
   assert.equal(result.status, "completed");

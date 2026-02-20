@@ -6,12 +6,14 @@ import { generateStatusSchema } from "../../../../shared/schemas/generate-job";
 import { config } from "../lib/config";
 import { cancelGeneration, getGenerationStatus, startGeneration } from "../lib/generation-service";
 import { openPathInFileManager } from "../lib/open-path";
-import { parseSessionId, resolveWithin } from "../lib/paths";
+import { parseSessionBucket, parseSessionId, resolveWithin, sessionBaseRelativePath } from "../lib/paths";
 
 export const generateRouter = Router();
 function invalidSessionMessage(error: unknown): string | null {
   if (!(error instanceof Error)) return null;
-  return ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message) ? error.message : null;
+  return ["INVALID_SESSION_ID", "INVALID_SESSION_BUCKET", "INVALID_SESSION_PATH"].includes(error.message)
+    ? error.message
+    : null;
 }
 
 function errorDetail(error: unknown): string {
@@ -28,6 +30,7 @@ const upload = multer({
 generateRouter.post("/api/generate/sync-reference", upload.single("reference"), async (req, res) => {
   try {
     const sessionId = parseSessionId(String(req.body.session_id ?? ""));
+    const sessionBucket = parseSessionBucket(String(req.body.session_bucket ?? ""));
     const sourceId = String(req.body.source_id ?? "");
     if (!/^src_\d{4}$/.test(sourceId)) {
       return res.status(400).json({ error: "INVALID_SOURCE_ID" });
@@ -44,16 +47,18 @@ generateRouter.post("/api/generate/sync-reference", upload.single("reference"), 
       return res.status(400).json({ error: "INVALID_FILENAME" });
     }
 
-    const srcDir = resolveWithin(config.shotsRoot, `${sessionId}/source/${sourceId}`);
+    const sessionRel = sessionBaseRelativePath(sessionId, sessionBucket);
+    const srcDir = resolveWithin(config.shotsRoot, `${sessionRel}/source/${sourceId}`);
     await fs.mkdir(srcDir, { recursive: true });
     const outPath = path.join(srcDir, filename);
     await fs.writeFile(outPath, uploaded.buffer);
 
     return res.status(200).json({
       session_id: sessionId,
+      session_bucket: sessionBucket ?? undefined,
       source_id: sourceId,
       filename,
-      reference_image_path: `shots/${sessionId}/source/${sourceId}/${filename}`
+      reference_image_path: `shots/${sessionRel}/source/${sourceId}/${filename}`.split(path.sep).join("/")
     });
   } catch (error) {
     const invalidSession = invalidSessionMessage(error);
@@ -74,6 +79,7 @@ generateRouter.post(
   async (req, res) => {
     try {
       const sessionId = parseSessionId(String(req.body.session_id ?? ""));
+      const sessionBucket = parseSessionBucket(String(req.body.session_bucket ?? ""));
       const sourceId = String(req.body.source_id ?? "");
       const captureId = String(req.body.capture_id ?? "");
       const openFinder = String(req.body.open_finder ?? "") === "1";
@@ -92,7 +98,8 @@ generateRouter.post(
         return res.status(400).json({ error: "MISSING_CAPTURE_FILES" });
       }
 
-      const captureDir = resolveWithin(config.shotsRoot, `${sessionId}/source/${sourceId}/captures/${captureId}`);
+      const sessionRel = sessionBaseRelativePath(sessionId, sessionBucket);
+      const captureDir = resolveWithin(config.shotsRoot, `${sessionRel}/source/${sourceId}/captures/${captureId}`);
       await fs.mkdir(captureDir, { recursive: true });
       await fs.writeFile(path.join(captureDir, "target.png"), target.buffer);
       await fs.writeFile(path.join(captureDir, "camera.json"), camera.buffer);
@@ -104,9 +111,10 @@ generateRouter.post(
 
       return res.status(200).json({
         session_id: sessionId,
+        session_bucket: sessionBucket ?? undefined,
         source_id: sourceId,
         capture_id: captureId,
-        capture_path: `shots/${sessionId}/source/${sourceId}/captures/${captureId}`,
+        capture_path: `shots/${sessionRel}/source/${sourceId}/captures/${captureId}`.split(path.sep).join("/"),
         finder_opened: openFinder
       });
     } catch (error) {
@@ -138,8 +146,9 @@ generateRouter.post("/api/generate", async (req, res) => {
 generateRouter.post("/api/generate/:jobId/cancel", async (req, res) => {
   try {
     const sessionId = parseSessionId(String(req.query.session_id ?? ""));
+    const sessionBucket = String(req.query.session_bucket ?? "");
     const jobId = String(req.params.jobId ?? "");
-    const cancelled = await cancelGeneration(sessionId, jobId);
+    const cancelled = await cancelGeneration(sessionId, sessionBucket, jobId);
     if (!cancelled) {
       return res.status(404).json({ error: "JOB_NOT_FOUND" });
     }
@@ -156,8 +165,9 @@ generateRouter.post("/api/generate/:jobId/cancel", async (req, res) => {
 generateRouter.get("/api/generate/:jobId", async (req, res) => {
   try {
     const sessionId = parseSessionId(String(req.query.session_id ?? ""));
+    const sessionBucket = String(req.query.session_bucket ?? "");
     const jobId = String(req.params.jobId ?? "");
-    const job = await getGenerationStatus(sessionId, jobId);
+    const job = await getGenerationStatus(sessionId, sessionBucket, jobId);
 
     if (!job) {
       return res.status(404).json({ error: "JOB_NOT_FOUND" });

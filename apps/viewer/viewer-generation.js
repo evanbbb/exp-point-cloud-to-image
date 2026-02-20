@@ -8,6 +8,13 @@ export function createGenerationController({
   ensureActiveSourceAspect
 }) {
   let autoPollTimer = null;
+  function generationQuery(sessionData) {
+    const base = `session_id=${encodeURIComponent(sessionData.session_id)}`;
+    const bucket = sessionData.session_bucket
+      ? `&session_bucket=${encodeURIComponent(sessionData.session_bucket)}`
+      : '';
+    return `${base}${bucket}`;
+  }
 
   function upsertLocalJob(partialJob, fallback = {}) {
     const sessionData = getSessionData();
@@ -85,7 +92,7 @@ export function createGenerationController({
       return null;
     }
     const res = await fetch(
-      `/api/generate/${activeJob.job_id}?session_id=${encodeURIComponent(sessionData.session_id)}`
+      `/api/generate/${activeJob.job_id}?${generationQuery(sessionData)}`
     );
     const data = await readJsonResponse(res, 'Poll generation');
     activeJob.status = data.status || activeJob.status;
@@ -97,10 +104,20 @@ export function createGenerationController({
     activeJob.polled_at = new Date().toISOString();
     await writeSessionFile();
     renderJobList();
-    if (Array.isArray(data.logs_tail) && data.logs_tail.length) {
-      const tail = data.logs_tail.slice(-20).join('\n');
-      log(`[${activeJob.job_id}] ${data.stage || activeJob.stage || ''} ${typeof data.progress_percent === 'number' ? `${data.progress_percent}%` : ''}\n${tail}`);
-    }
+    log({
+      poll: 'generation_status',
+      job_id: activeJob.job_id,
+      session_id: data.session_id ?? sessionData.session_id,
+      session_bucket: data.session_bucket ?? sessionData.session_bucket,
+      status: data.status ?? activeJob.status,
+      stage: data.stage ?? activeJob.stage,
+      progress_percent: data.progress_percent ?? activeJob.progress_percent,
+      created_at: data.created_at ?? activeJob.created_at,
+      updated_at: data.updated_at ?? activeJob.updated_at,
+      scene_manifest_path: data.scene_manifest_path ?? activeJob.scene_manifest_path,
+      error: data.error ?? null,
+      logs_tail: Array.isArray(data.logs_tail) ? data.logs_tail : []
+    });
     if (isCompletedStatus(activeJob.status) && activeJob.scene_manifest_path) {
       try {
         await sceneController.playCompletionSound(activeJob.job_id);
@@ -126,7 +143,7 @@ export function createGenerationController({
 
     if (!localJob.scene_manifest_path) {
       const statusRes = await fetch(
-        `/api/generate/${encodeURIComponent(jobId)}?session_id=${encodeURIComponent(sessionData.session_id)}`
+        `/api/generate/${encodeURIComponent(jobId)}?${generationQuery(sessionData)}`
       );
       const statusData = await readJsonResponse(statusRes, 'Load job output');
       upsertLocalJob(statusData);

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const generateRequestSchema = z.object({
   session_id: z.string().min(1),
+  session_bucket: z.string().optional(),
   reference_image_path: z.string().min(1),
   force_regenerate: z.boolean().optional().default(false)
 });
@@ -20,6 +21,7 @@ export const generateStageSchema = z.enum([
 export const generateJobSchema = z.object({
   job_id: z.string(),
   session_id: z.string(),
+  session_bucket: z.string().optional(),
   status: generateStatusSchema,
   stage: generateStageSchema,
   progress_percent: z.number().int().min(0).max(100),
