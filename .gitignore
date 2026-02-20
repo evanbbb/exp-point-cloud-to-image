@@ -40,6 +40,10 @@ Thumbs.db
 *.exe
 *.war
 
+# Environment / secrets
+.env
+.env.local
+
 # Large media files
 *.mp4
 *.tiff

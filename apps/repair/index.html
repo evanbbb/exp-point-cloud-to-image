@@ -19,6 +19,7 @@
         --color-accent: #007AFF;
         --color-menu-bg: #212121;
         --color-canvas-bg: #282828;
+        --color-input-bg: #333333;
         --color-border: rgba(255, 255, 255, 0.15);
         --sidebar-width: 200px;
       }
@@ -100,6 +101,299 @@
 
       i.ph { font-size: 16px; line-height: 1; }
 
+      /* Controls */
+      .row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+
+      input, select {
+        padding: 7px 10px;
+        background: var(--color-input-bg);
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 12px;
+        outline: none;
+      }
+
+      input:focus, select:focus { border-color: var(--color-accent); }
+
+      input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        padding: 0;
+        margin: 0;
+        background: var(--color-input-bg);
+        border: 1px solid var(--color-border);
+        accent-color: var(--color-accent);
+      }
+
+      textarea {
+        padding: 7px 10px;
+        background: var(--color-input-bg);
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 12px;
+        outline: none;
+        resize: vertical;
+      }
+
+      textarea:focus { border-color: var(--color-accent); }
+
+      button {
+        padding: 7px 14px;
+        background: transparent;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, filter 150ms ease, transform 120ms ease;
+      }
+
+      @media (hover: hover) {
+        button:not(:disabled):hover { filter: brightness(1.08); }
+      }
+
+      button:not(:disabled):active { transform: translateY(1px) scale(0.98); }
+
+      button.primary {
+        background: var(--color-accent);
+        border-color: var(--color-accent);
+        color: #fff;
+      }
+
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        button { transition: none; }
+      }
+
+      button svg, button i { display: block; }
+
+      .icon-btn {
+        padding: 4px 7px;
+        line-height: 1;
+        color: var(--color-text-muted);
+      }
+
+      @media (hover: hover) {
+        .icon-btn:not(:disabled):hover { color: var(--color-text); filter: none; }
+      }
+
+      /* Pick-folder landing */
+      .pick-landing {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        margin-top: 48px;
+      }
+
+      .pick-landing p { max-width: 440px; }
+
+      /* Session header */
+      .session-header { margin-bottom: 16px; }
+
+      .session-id-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+      }
+
+      .session-id-display { font-size: 11px; color: var(--color-text-muted); }
+      .session-id-display span { color: var(--color-text); font-weight: 600; }
+
+      /* Section divider */
+      .section {
+        border-top: 1px solid var(--color-border);
+        margin-top: 20px;
+        padding-top: 16px;
+      }
+
+      .section-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+      }
+
+      /* Captures grid */
+      .captures-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 12px;
+      }
+
+      .capture-card {
+        border: 2px solid transparent;
+        border-radius: 6px;
+        background: var(--color-input-bg);
+        cursor: pointer;
+        overflow: hidden;
+        transition: border-color 0.15s;
+      }
+
+      .capture-card:hover { border-color: var(--color-border); }
+      .capture-card.selected { border-color: var(--color-accent); }
+
+      .capture-card img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16/9;
+        object-fit: cover;
+        background: #1e1e1e;
+      }
+
+      .capture-card-label {
+        padding: 6px 8px;
+        font-size: 10px;
+        color: var(--color-text-muted);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .capture-card.selected .capture-card-label { color: var(--color-text); }
+
+      .capture-check {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+        border: 1px solid var(--color-border);
+        background: transparent;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .capture-card.selected .capture-check {
+        background: var(--color-accent);
+        border-color: var(--color-accent);
+      }
+
+      .captures-empty {
+        font-size: 11px;
+        color: var(--color-text-muted);
+        padding: 24px 0;
+      }
+
+      /* Action bar */
+      .action-bar {
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid var(--color-border);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .action-bar-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .selection-count {
+        font-size: 11px;
+        color: var(--color-text-muted);
+      }
+
+      .toggle-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--color-text-muted);
+        user-select: none;
+      }
+
+      #notesField {
+        width: 100%;
+        max-width: 480px;
+        min-height: 48px;
+      }
+
+      /* Results panel */
+      .results-panel {
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid var(--color-border);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .result-card {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 12px;
+        background: var(--color-input-bg);
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        font-size: 11px;
+      }
+
+      .result-images {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      .result-images img {
+        width: 140px;
+        aspect-ratio: 16/9;
+        object-fit: cover;
+        border-radius: 4px;
+        background: #1e1e1e;
+      }
+
+      .result-info {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .result-cap-id {
+        font-weight: 600;
+        color: var(--color-text);
+      }
+
+      .result-status {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .result-status--pending  { color: #F59E0B; }
+      .result-status--running  { color: #3B82F6; }
+      .result-status--succeeded { color: #22C55E; }
+      .result-status--failed   { color: #EF4444; }
+
+      .result-meta {
+        font-size: 10px;
+        color: var(--color-text-muted);
+      }
+
+      .result-error {
+        font-size: 10px;
+        color: #EF4444;
+      }
+
+      /* Log */
       pre {
         background: #1e1e1e;
         border: 1px solid var(--color-border);
@@ -109,6 +403,7 @@
         font-family: inherit;
         font-size: 11px;
         color: var(--color-text-muted);
+        margin-top: 12px;
       }
     </style>
   </head>
@@ -128,15 +423,90 @@
     </nav>
 
     <main class="canvas-area">
-      <h1 class="typography-h1">Part B: Generative Repair of Captures</h1>
-      <p class="typography-body-muted">
-        <strong style="color:var(--color-text);">Step 2 of 2.</strong> The viewer's captures contain a target image rendered from
-        a new camera angle — but the 3D splat has holes and artifacts where it had to guess.
-        This app sends the original reference photo and the captured target to a FLUX LoRA model
-        that fills in the blanks, producing a clean <em>repaired.png</em> for each capture.
-        Requires a <code style="color:var(--color-text);">FAL_KEY</code> and explicit paid confirmation before each run.
-      </p>
-      <pre>POST /api/repair expects multipart files: reference, target, delta_pose, camera and paid_confirm=true</pre>
+
+      <!-- State: pick -->
+      <div id="state-pick">
+        <h1 class="typography-h1">Part B: Generative Repair of Captures</h1>
+        <div class="pick-landing">
+          <p class="typography-body-muted">
+            <strong style="color:var(--color-text);">Step 2 of 2.</strong>
+            Select the same session folder used in the viewer.
+            This app reads captures from it and sends them to FLUX LoRA for repair.
+          </p>
+          <button id="pickDirBtn" class="primary">Pick Session Folder</button>
+        </div>
+      </div>
+
+      <!-- State: ready -->
+      <div id="state-ready" style="display:none">
+        <div class="session-header">
+          <h1 class="typography-h1">Part B: Generative Repair of Captures</h1>
+          <div class="session-id-row">
+            <p class="session-id-display">Session: <span id="sessionDisplay"></span></p>
+            <button id="switchDirBtn" class="icon-btn" title="Switch folder">
+              <i class="ph ph-arrows-counter-clockwise" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Source selector -->
+        <div class="row" style="align-items:flex-start;gap:16px;">
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:11px;color:var(--color-text-muted);font-weight:600;min-width:60px;">Source</span>
+              <select id="sourceSelect"></select>
+            </div>
+          </div>
+          <div id="sourceThumbnail" style="display:none;flex-shrink:0;">
+            <div class="capture-card" style="width:160px;cursor:default;">
+              <img id="sourceThumbImg" alt="reference" />
+              <div class="capture-card-label">
+                <span id="sourceThumbLabel"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Captures section -->
+        <div class="section">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <span class="section-label" style="margin-bottom:0;" id="capturesLabel">Captures</span>
+            <div style="display:flex;gap:8px;">
+              <button id="selectAllBtn" class="icon-btn" style="font-size:11px;padding:4px 8px;">Select All</button>
+              <button id="clearSelBtn" class="icon-btn" style="font-size:11px;padding:4px 8px;">Clear</button>
+            </div>
+          </div>
+          <div id="capturesGrid" class="captures-grid"></div>
+        </div>
+
+        <!-- Action bar -->
+        <div class="action-bar" id="actionBar">
+          <div class="action-bar-row">
+            <span class="selection-count" id="selectionCount">0 captures selected</span>
+          </div>
+          <textarea id="notesField" placeholder="Notes (optional) — appended to repair prompt"></textarea>
+          <div class="action-bar-row">
+            <label class="toggle-inline">
+              <input type="checkbox" id="paidConfirm" />
+              I understand this uses paid API credits
+            </label>
+          </div>
+          <div class="action-bar-row">
+            <button id="runRepairBtn" class="primary" disabled>Run Repair</button>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div class="results-panel" id="resultsPanel" style="display:none">
+          <span class="section-label">Results</span>
+          <div id="resultsList"></div>
+        </div>
+
+        <pre id="out"></pre>
+      </div>
+
     </main>
+
+    <script type="module" src="repair-app.js"></script>
   </body>
 </html>

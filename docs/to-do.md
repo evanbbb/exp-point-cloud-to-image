@@ -5,8 +5,8 @@
 - ~~Install and validate `ml-sharp` runtime environment per upstream README~~ DONE (.venv-mlsharp-311, Python 3.11 + torch 2.2.2)
 - ~~Replace mock generation internals with real `ml-sharp` worker in `apps/server/src/lib/generation-service.ts` (keep API contract unchanged)~~ DONE
 - ~~Write real scene manifest mapping to `shots/<SESSION_ID>/source/scene/manifest.json`~~ DONE (includes ply_path)
-- Add failure-path metadata writing for `/api/repair` (`status=failed`, structured `error`)
-- Add output image dimensions in `repair_meta.json` from actual decoded image (not request input)
+- ~~Add failure-path metadata writing for `/api/repair` (`status=failed`, structured `error`)~~ DONE
+- ~~Add output image dimensions in `repair_meta.json` from actual decoded image (not request input)~~ DONE
 
 ## P2 (Important)
 - Add error-path tests for `/api/repair` (invalid input, fal failure, timeout, invalid session id)

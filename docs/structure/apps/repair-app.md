@@ -3,18 +3,25 @@
 Purpose:
 Select captured views and send them to FLUX for paid repair.
 
-Never touches source/.
+Current status:
+
+- Browser page is currently informational only (`apps/repair/index.html`).
+- Queueing/running repairs is currently handled by direct server API usage, not an interactive Repair UI yet.
 
 Reads:
 
-source/reference.png
-source/captures/*
+source/src_####/<reference-filename>
+source/src_####/captures/*
 
 Writes:
 
 repairs/repair_####/
 
 UI:
+
+- Static page describing Part B flow and API expectations.
+
+Planned UI (not yet implemented):
 
 - Pick Session Folder
 - Grid of captures (from thumb.jpg or downscaled target.png)
@@ -23,7 +30,7 @@ UI:
 - Queue Repair
 - Run Repair (paid)
 
-Queue Repair:
+Queue Repair (planned):
 
 Creates:
 
@@ -37,7 +44,7 @@ delta_pose.json
 camera.json
 notes.txt (if present)
 
-Run Repair:
+Run Repair (implemented in server API):
 
 POSTs to localhost server:
 
@@ -51,13 +58,13 @@ delta_pose.json
 camera.json
 notes.txt
 
-Server:
+Server behavior:
 
 - Builds FLUX prompt
 - Calls fal.ai
-- Returns repaired image
+- Returns `image/png`
 
-Browser writes:
+Server writes:
 
 repairs/repair_####/output/repaired.png
 repairs/repair_####/output/repair_meta.json

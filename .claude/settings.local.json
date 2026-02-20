@@ -26,7 +26,10 @@
       "WebFetch(domain:phosphoricons.com)",
       "Bash(xargs:*)",
       "Bash(npx tsc:*)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(ls:*)",
+      "Bash(node --version:*)",
+      "Bash(pkill:*)"
     ]
   }
 }
