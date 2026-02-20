@@ -7,7 +7,7 @@ import { deltaPoseSchema } from "../../../../shared/schemas/delta-pose";
 import { cameraSchema } from "../../../../shared/schemas/camera";
 import { repairMetaSchema, type RepairMeta } from "../../../../shared/schemas/repair-meta";
 import { config } from "../lib/config";
-import { parseSessionId, resolveWithin } from "../lib/paths";
+import { parseSessionBucket, parseSessionId, resolveWithin, sessionBaseRelativePath } from "../lib/paths";
 import { writeRepairMeta } from "../lib/repair-meta";
 
 const upload = multer({
@@ -24,12 +24,12 @@ function invalidSessionMessage(error: unknown): string | null {
   return ["INVALID_SESSION_ID", "INVALID_SESSION_PATH"].includes(error.message) ? error.message : null;
 }
 
-function repairInputPaths(sessionId: string, repairId: string) {
+function repairInputPaths(sessionRel: string, repairId: string) {
   return {
-    reference_image_path: `shots/${sessionId}/repairs/${repairId}/input/reference.png`,
-    target_image_path: `shots/${sessionId}/repairs/${repairId}/input/target.png`,
-    delta_pose_path: `shots/${sessionId}/repairs/${repairId}/input/delta_pose.json`,
-    camera_path: `shots/${sessionId}/repairs/${repairId}/input/camera.json`
+    reference_image_path: `${sessionRel}/repairs/${repairId}/input/reference.png`,
+    target_image_path: `${sessionRel}/repairs/${repairId}/input/target.png`,
+    delta_pose_path: `${sessionRel}/repairs/${repairId}/input/delta_pose.json`,
+    camera_path: `${sessionRel}/repairs/${repairId}/input/camera.json`
   };
 }
 
@@ -38,13 +38,15 @@ fal.config({
 });
 
 const PROMPT_TEMPLATE =
-  "Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair missing regions and perspective artifacts. The camera has moved by: {x,y,z,pitch,yaw,roll}";
+  "Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: {x,y,z,pitch,yaw,roll}";
 
 repairRouter.get("/api/repairs/list", async (req, res) => {
   try {
     const sessionId = parseSessionId(String(req.query.session_id ?? ""));
+    const sessionBucket = parseSessionBucket(String(req.query.session_bucket ?? ""));
+    const sessionRel = sessionBaseRelativePath(sessionId, sessionBucket);
 
-    const repairsDir = resolveWithin(config.shotsRoot, `${sessionId}/repairs`);
+    const repairsDir = resolveWithin(config.shotsRoot, `${sessionRel}/repairs`);
     let entries: string[] = [];
     try {
       entries = (await fs.readdir(repairsDir)).filter(e => /^repair_/.test(e));
@@ -85,7 +87,10 @@ repairRouter.post(
   async (req, res) => {
     const start = Date.now();
     let sessionId: string | undefined;
+    let sessionBucket: string | null = null;
+    let sessionRel: string | undefined;
     let repairId: string | undefined;
+    let sourceId: string | undefined;
     let capId: string | undefined;
     let uploadedReferenceUrl: string | undefined;
     let uploadedTargetUrl: string | undefined;
@@ -109,7 +114,11 @@ repairRouter.post(
       }
 
       sessionId = parseSessionId(String(req.body.session_id || ""));
+      sessionBucket = parseSessionBucket(String(req.body.session_bucket || ""));
+      sessionRel = sessionBaseRelativePath(sessionId, sessionBucket);
       repairId = String(req.body.repair_id || `repair_${Date.now()}`);
+      const rawSourceId = String(req.body.source_id || "").trim();
+      sourceId = rawSourceId || undefined;
       const rawCapId = String(req.body.cap_id || "").trim();
       capId = /^cap_\d{4}$/.test(rawCapId) ? rawCapId : undefined;
 
@@ -125,7 +134,7 @@ repairRouter.post(
 
       const prompt = PROMPT_TEMPLATE.replace(
         "{x,y,z,pitch,yaw,roll}",
-        `${deltaPose.x},${deltaPose.y},${deltaPose.z},${deltaPose.pitch},${deltaPose.yaw},${deltaPose.roll}`
+        JSON.stringify({ x: deltaPose.x, y: deltaPose.y, z: deltaPose.z, pitch: deltaPose.pitch, yaw: deltaPose.yaw, roll: deltaPose.roll })
       );
 
       withNotes = notes ? `${prompt}\n${notes.buffer.toString("utf8")}` : prompt;
@@ -158,7 +167,7 @@ repairRouter.post(
       const width = imageBuffer.readUInt32BE(16);   // PNG IHDR bytes 16-19
       const height = imageBuffer.readUInt32BE(20);  // PNG IHDR bytes 20-23
 
-      const outputDir = resolveWithin(config.shotsRoot, `${sessionId}/repairs/${repairId}/output`);
+      const outputDir = resolveWithin(config.shotsRoot, `${sessionRel}/repairs/${repairId}/output`);
       await fs.mkdir(outputDir, { recursive: true });
       const imagePath = path.join(outputDir, "repaired.png");
       await fs.writeFile(imagePath, imageBuffer);
@@ -167,12 +176,13 @@ repairRouter.post(
         schema_version: "1.0",
         repair_id: repairId,
         session_id: sessionId,
+        source_id: sourceId,
         cap_id: capId,
         created_at: new Date(start).toISOString(),
         completed_at: new Date().toISOString(),
         duration_ms: Date.now() - start,
         status: "succeeded",
-        input: repairInputPaths(sessionId, repairId),
+        input: repairInputPaths(sessionRel!, repairId),
         fal: {
           model: config.falModel,
           loras: [{ path: config.falLoraPath, scale: 1.0 }],
@@ -199,7 +209,7 @@ repairRouter.post(
           }
         },
         output: {
-          repaired_image_path: `shots/${sessionId}/repairs/${repairId}/output/repaired.png`,
+          repaired_image_path: `${sessionRel}/repairs/${repairId}/output/repaired.png`,
           width,
           height,
           bytes: imageBuffer.byteLength
@@ -218,19 +228,20 @@ repairRouter.post(
 
       if (sessionId && repairId && deltaPose && withNotes) {
         try {
-          const failedOutputDir = resolveWithin(config.shotsRoot, `${sessionId}/repairs/${repairId}/output`);
+          const failedOutputDir = resolveWithin(config.shotsRoot, `${sessionRel!}/repairs/${repairId}/output`);
           await fs.mkdir(failedOutputDir, { recursive: true });
           const isTimeout = error instanceof Error && error.message === "FAL_TIMEOUT";
           const failureMeta: RepairMeta = {
             schema_version: "1.0",
             repair_id: repairId,
             session_id: sessionId,
+            source_id: sourceId,
             cap_id: capId,
             created_at: new Date(start).toISOString(),
             completed_at: new Date().toISOString(),
             duration_ms: Date.now() - start,
             status: "failed",
-            input: repairInputPaths(sessionId, repairId),
+            input: repairInputPaths(sessionRel!, repairId),
             fal: {
               model: config.falModel,
               loras: [{ path: config.falLoraPath, scale: 1.0 }],

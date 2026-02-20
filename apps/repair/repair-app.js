@@ -8,6 +8,7 @@ let sourceThumbUrl = null;
 let selected = new Set(); // capId strings
 let lastSelectedCapId = null;
 let isRunning = false;
+let prevRepairsGeneration = 0;
 
 // ── Lightbox ────────────────────────────────────────────────
 
@@ -231,6 +232,7 @@ function updateRunButton() {
 }
 
 async function updatePreviousRepairs() {
+  const gen = ++prevRepairsGeneration;
   const panel = document.getElementById('previousRepairs');
   if (selected.size === 0) { panel.style.display = 'none'; return; }
   const capId = lastSelectedCapId && selected.has(lastSelectedCapId)
@@ -247,12 +249,18 @@ async function updatePreviousRepairs() {
     if (cap) {
       try { capPose = JSON.parse(await cap.deltaPoseFile.text()); } catch { /* ignore */ }
     }
+    if (gen !== prevRepairsGeneration) return;
 
-    const res = await fetch(`/api/repairs/list?session_id=${encodeURIComponent(sessionData.session_id)}`);
+    const bucketParam = sessionData.session_bucket
+      ? `&session_bucket=${encodeURIComponent(sessionData.session_bucket)}`
+      : '';
+    const res = await fetch(`/api/repairs/list?session_id=${encodeURIComponent(sessionData.session_id)}${bucketParam}`);
     const data = await res.json();
+    if (gen !== prevRepairsGeneration) return;
     const allRepairs = data.repairs ?? [];
 
     const repairs = allRepairs.filter(r => {
+      if (activeSourceId && r.source_id !== activeSourceId) return false;
       if (r.cap_id) return r.cap_id === capId;
       // Legacy: no cap_id — match by delta_pose_values
       if (!capPose || !r.prompt?.delta_pose_values) return false;
@@ -269,8 +277,9 @@ async function updatePreviousRepairs() {
     for (const repair of repairs) {
       const card = document.createElement('div');
       card.className = 'capture-card';
+      const bucket = sessionData.session_bucket ? `${sessionData.session_bucket}/` : '';
       const imgUrl = repair.output
-        ? `/shots/${repair.session_id}/repairs/${repair.repair_id}/output/repaired.png`
+        ? `/shots/${bucket}${repair.session_id}/repairs/${repair.repair_id}/output/repaired.png`
         : null;
       const dt = new Date(repair.created_at);
       const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
@@ -286,17 +295,34 @@ async function updatePreviousRepairs() {
       if (imgUrl) {
         card.querySelector('img').onclick = (e) => { e.stopPropagation(); openLightbox(imgUrl); };
       }
-      if (imgUrl && cap) {
+      if (imgUrl) {
         const labelEl = card.querySelector('.capture-card-label');
-        const compareBtn = document.createElement('button');
-        compareBtn.className = 'icon-btn compare-trigger';
-        compareBtn.title = 'Compare source / capture / repair';
-        compareBtn.innerHTML = '<i class="ph ph-eye"></i>';
-        compareBtn.onclick = (e) => {
+        const btnWrap = document.createElement('div');
+        btnWrap.style.cssText = 'display:flex;gap:2px;align-items:center;';
+        if (cap) {
+          const compareBtn = document.createElement('button');
+          compareBtn.className = 'icon-btn compare-trigger';
+          compareBtn.title = 'Compare source / capture / repair';
+          compareBtn.innerHTML = '<i class="ph ph-eye"></i>';
+          compareBtn.onclick = (e) => {
+            e.stopPropagation();
+            openCompare(sourceThumbUrl, cap.targetUrl, imgUrl);
+          };
+          btnWrap.appendChild(compareBtn);
+        }
+        const folderBtn = document.createElement('button');
+        folderBtn.className = 'icon-btn compare-trigger';
+        folderBtn.title = 'Open in Finder';
+        folderBtn.innerHTML = '<i class="ph ph-folder-open"></i>';
+        folderBtn.onclick = async (e) => {
           e.stopPropagation();
-          openCompare(sourceThumbUrl, cap.targetUrl, imgUrl);
+          const relPath = `${bucket}${repair.session_id}/repairs/${repair.repair_id}/output`;
+          try {
+            await fetch('/api/open-folder', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rel_path: relPath }) });
+          } catch (err) { log({ error: `Failed to open folder: ${err}` }); }
         };
-        labelEl.insertBefore(compareBtn, labelEl.children[1]);
+        btnWrap.appendChild(folderBtn);
+        labelEl.insertBefore(btnWrap, labelEl.children[1]);
       }
       grid.appendChild(card);
     }
@@ -319,9 +345,9 @@ async function updatePromptPreview() {
   try {
     const deltaPoseText = await cap.deltaPoseFile.text();
     const pose = JSON.parse(deltaPoseText);
-    const fmt = v => (typeof v === 'number' ? v.toFixed(4) : v);
-    const poseStr = `${fmt(pose.x)},${fmt(pose.y)},${fmt(pose.z)},${fmt(pose.pitch)},${fmt(pose.yaw)},${fmt(pose.roll)}`;
-    let prompt = `Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair missing regions and perspective artifacts. The camera has moved by: ${poseStr}`;
+    const fmt = v => (typeof v === 'number' ? parseFloat(v.toFixed(4)) : v);
+    const poseStr = JSON.stringify({ x: fmt(pose.x), y: fmt(pose.y), z: fmt(pose.z), pitch: fmt(pose.pitch), yaw: fmt(pose.yaw), roll: fmt(pose.roll) });
+    let prompt = `Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: ${poseStr}`;
     const notes = document.getElementById('notesField').value.trim();
     if (notes) prompt += `\n\n${notes}`;
     document.getElementById('promptCapId').textContent = capId;
@@ -390,7 +416,9 @@ async function runRepairs() {
 
       const fd = new FormData();
       fd.append('session_id', sessionData.session_id);
+      fd.append('session_bucket', sessionData.session_bucket || '');
       fd.append('repair_id', repairId);
+      fd.append('source_id', activeSourceId);
       fd.append('cap_id', cap.capId);
       fd.append('paid_confirm', 'true');
       fd.append('reference', referenceFile, source.filename);
@@ -412,36 +440,18 @@ async function runRepairs() {
         throw new Error(detail);
       }
 
-      const blob = await res.blob();
-      const repairedUrl = URL.createObjectURL(blob);
-
-      // Update card to succeeded
-      const statusEl = card.querySelector('.result-status');
-      statusEl.className = 'result-status result-status--succeeded';
-      statusEl.textContent = 'Succeeded';
-      const [targetImg, repairedImg] = card.querySelectorAll('.result-images img');
-      targetImg.style.cursor = 'zoom-in';
-      targetImg.onclick = (e) => { e.stopPropagation(); openLightbox(cap.targetUrl); };
-      repairedImg.src = repairedUrl;
-      repairedImg.style.display = '';
-      repairedImg.style.cursor = 'zoom-in';
-      repairedImg.onclick = (e) => { e.stopPropagation(); openLightbox(repairedUrl); };
-      const meta = card.querySelector('.result-meta');
-      const sizeMb = (blob.size / 1024 / 1024).toFixed(2);
-      const folderPath = `${sessionData.session_id}/repairs/${repairId}/output`;
-      meta.innerHTML = `${repairId} — ${sizeMb} MB &nbsp;<button class="icon-btn" style="font-size:11px;padding:2px 6px;" data-open-folder="${folderPath}" title="Open in Finder"><i class="ph ph-folder-open" aria-hidden="true"></i></button>`;
-
-      const compareBtn = document.createElement('button');
-      compareBtn.className = 'icon-btn compare-trigger';
-      compareBtn.title = 'Compare source / capture / repair';
-      compareBtn.innerHTML = '<i class="ph ph-eye"></i>';
-      compareBtn.onclick = (e) => {
-        e.stopPropagation();
-        openCompare(sourceThumbUrl, cap.targetUrl, repairedUrl);
-      };
-      card.querySelector('.result-info').appendChild(compareBtn);
+      await res.blob(); // consume body
 
       log(`${cap.capId} repaired successfully.`);
+
+      // Move card out of Jobs and into Previous Repairs
+      card.remove();
+      if (!list.hasChildNodes()) {
+        panel.style.display = 'none';
+      }
+      // Ensure the completed cap is the focused one so it shows up immediately
+      lastSelectedCapId = cap.capId;
+      await updatePreviousRepairs();
     } catch (err) {
       // Update card to failed
       const statusEl = card.querySelector('.result-status');

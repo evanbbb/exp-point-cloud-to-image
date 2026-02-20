@@ -30,7 +30,9 @@
       "Bash(ls:*)",
       "Bash(node --version:*)",
       "Bash(pkill:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "WebFetch(domain:dl3dv-10k.github.io)",
+      "WebFetch(domain:docs.nerf.studio)"
     ]
   }
 }
