@@ -242,8 +242,17 @@
         transition: border-color 0.15s;
       }
 
-      .capture-card:hover { border-color: var(--color-border); }
       .capture-card.selected { border-color: var(--color-accent); }
+
+      .capture-card img {
+        transition: filter 0.15s;
+      }
+      .capture-card img:hover { filter: brightness(1.15); }
+
+      .capture-card-label {
+        transition: background-color 0.15s;
+      }
+      .capture-card-label:hover { background: var(--color-border); }
 
       .capture-card img {
         display: block;

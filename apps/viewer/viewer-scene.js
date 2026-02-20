@@ -534,6 +534,21 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       controls.target.copy(center);
       controls.update();
       fitShotCameraToGeneratedScene({ resetDelta: true });
+
+      // Extend shot camera clip planes to fit the scene
+      shotCamera.near = sphere.radius * 0.01;
+      shotCamera.far = sphere.radius * 20;
+      shotCamera.updateProjectionMatrix();
+
+      // Reposition helpers to match scene scale and prevent Z-fighting
+      if (gridHelper) {
+        gridHelper.position.y = box.min.y - 0.02;
+        const gridSize = Math.max(2, sphere.radius * 4);
+        gridHelper.scale.setScalar(gridSize / 10);
+      }
+      if (axesHelper) {
+        axesHelper.scale.setScalar(sphere.radius * 0.4);
+      }
     }
   }
 

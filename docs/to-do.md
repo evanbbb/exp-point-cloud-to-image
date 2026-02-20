@@ -1,11 +1,9 @@
 # To Do
 
 ## P1
-- Repair Page: only select one capture at a time to repair
-- Repair Page: allow user to run mutlple repairs at once, 1-4
-- Repair Page: tidy the line of information below a repair thumbnail. Put date and time on one line. Put the icons below on a second line. Remove "succeeded" label
-- Viewer Page: the capture action captures the virtual navigational objects like the grid plane. Hide everything in the canvas besides the 3D data at the moment of capture. Ensure it is unhidden when the capture is complete.
 
+- Repair Page: The Captures. The top and bottom halves of the capture thumbnail box do different things. They should each have seperate hover states. They bottom half could also use a "job" icon so that users know it is different.
+- Viewer Page: The Generation list shows all successful generations. The list should only show those connected with the currrently selected src. If no src is selected, no generations are shown.
 
 ## P2 (Important)
 - Instead of two pages, let's unify the system. Users select one sesion folder at the start. This then enable the switching between the viewer and repair "tabs". If the user wants to change the session folder, they can in the settings menu.
@@ -14,7 +12,7 @@
 - Add generation tests for completed-job reuse behavior when manifest already 
 
 ## P3 (Nice to Have)
-
+- add Apple Silicon option in the Settings. We then need to build out what that means.
 
 ## Notes
 - Completed offline-first implementation summary: `docs/solutions/offline-phase-completed.md`

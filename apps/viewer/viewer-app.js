@@ -243,6 +243,7 @@ const generationController = createGenerationController({
   readJsonResponse,
   isCompletedStatus,
   sceneController,
+  sourceIdFromManifestPath,
   ensureActiveSourceAspect: async (job) => {
     if (!getActiveSource()) {
       const sourceId = sourceIdFromManifestPath(job?.scene_manifest_path);
@@ -419,9 +420,6 @@ document.getElementById('pickDirInit').onclick = pickFolder;
 document.getElementById('pickDirSwitch').onclick = pickFolder;
 // Note: File System Access API does not expose the full filesystem path,
 // so we can't open Finder directly. Show folder name as best fallback.
-document.getElementById('btnOpenFolder').onclick = () => {
-  if (sessionDirHandle) log('Session folder: ' + sessionDirHandle.name);
-};
 document.getElementById('btnCancel').onclick = () => setUIState('pick');
 document.getElementById('btnInit').onclick = initializeSession;
 

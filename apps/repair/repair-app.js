@@ -175,7 +175,8 @@ function renderCapturesGrid() {
     card.dataset.capId = cap.capId;
     card.innerHTML = `
       <img src="${cap.targetUrl}" alt="${cap.capId}" style="cursor:zoom-in;" />
-      <div class="capture-card-label">
+      <div class="capture-card-label" style="cursor:pointer;">
+        <i class="ph ph-lightning" aria-hidden="true" style="font-size:12px;"></i>
         <span>${cap.capId}</span>
       </div>
     `;
@@ -183,7 +184,10 @@ function renderCapturesGrid() {
       e.stopPropagation();
       openLightbox(cap.targetUrl);
     };
-    card.onclick = () => toggleCapture(cap.capId);
+    card.querySelector('.capture-card-label').onclick = (e) => {
+      e.stopPropagation();
+      toggleCapture(cap.capId);
+    };
     grid.appendChild(card);
   }
   updateActionBar();

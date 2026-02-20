@@ -5,6 +5,7 @@ export function createGenerationController({
   readJsonResponse,
   isCompletedStatus,
   sceneController,
+  sourceIdFromManifestPath,
   ensureActiveSourceAspect
 }) {
   let autoPollTimer = null;
@@ -33,12 +34,23 @@ export function createGenerationController({
     const sessionData = getSessionData();
     const el = document.getElementById('jobList');
     if (!el || !sessionData) return;
-    if (!sessionData.jobs.length) {
-      el.innerHTML = '<span class="typography-caption">No generation jobs yet.</span>';
+
+    const activeSource = sessionData.active_source;
+    if (!activeSource) {
+      el.innerHTML = '<span class="typography-caption">Select a source to see generations.</span>';
+      return;
+    }
+
+    const filtered = sessionData.jobs.filter(j =>
+      sourceIdFromManifestPath(j.scene_manifest_path) === activeSource
+    );
+
+    if (!filtered.length) {
+      el.innerHTML = '<span class="typography-caption">No generation jobs for this source.</span>';
       return;
     }
     const loadedId = sceneController.getLoadedGeneratedJobId();
-    el.innerHTML = [...sessionData.jobs].reverse().map(j =>
+    el.innerHTML = [...filtered].reverse().map(j =>
       `<div class="job-row${loadedId === j.job_id ? ' is-loaded' : ''}">
         <span>${j.job_id}</span>
         <span class="job-status job-status--${j.status}">${j.status}</span>
