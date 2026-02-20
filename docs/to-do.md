@@ -1,22 +1,20 @@
 # To Do
 
-## P1 (Critical)
-- ~~Finish downloading SHARP checkpoint to `assets/models/sharp_2572gikvuh.pt` (resumable)~~ DONE (2.6GB)
-- ~~Install and validate `ml-sharp` runtime environment per upstream README~~ DONE (.venv-mlsharp-311, Python 3.11 + torch 2.2.2)
-- ~~Replace mock generation internals with real `ml-sharp` worker in `apps/server/src/lib/generation-service.ts` (keep API contract unchanged)~~ DONE
-- ~~Write real scene manifest mapping to `shots/<SESSION_ID>/source/scene/manifest.json`~~ DONE (includes ply_path)
-- ~~Add failure-path metadata writing for `/api/repair` (`status=failed`, structured `error`)~~ DONE
-- ~~Add output image dimensions in `repair_meta.json` from actual decoded image (not request input)~~ DONE
+## P1
+- Repair Page: only select one capture at a time to repair
+- Repair Page: allow user to run mutlple repairs at once, 1-4
+- Repair Page: tidy the line of information below a repair thumbnail. Put date and time on one line. Put the icons below on a second line. Remove "succeeded" label
+- Viewer Page: the capture action captures the virtual navigational objects like the grid plane. Hide everything in the canvas besides the 3D data at the moment of capture. Ensure it is unhidden when the capture is complete.
+
 
 ## P2 (Important)
+- Instead of two pages, let's unify the system. Users select one sesion folder at the start. This then enable the switching between the viewer and repair "tabs". If the user wants to change the session folder, they can in the settings menu.
+- add fal key to UI settings so that ic an be changed by the user. 
 - Add error-path tests for `/api/repair` (invalid input, fal failure, timeout, invalid session id)
-- Add generation tests for completed-job reuse behavior when manifest already exists
-- Add basic side-by-side repaired-image loading in viewer
+- Add generation tests for completed-job reuse behavior when manifest already 
 
 ## P3 (Nice to Have)
-- Overlay opacity/scrub comparison mode in viewer
-- Add recovery UI for failed generation jobs
-- Add fixture dataset for stable local integration tests
+
 
 ## Notes
 - Completed offline-first implementation summary: `docs/solutions/offline-phase-completed.md`
