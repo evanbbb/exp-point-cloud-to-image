@@ -37,8 +37,6 @@ fal.config({
   credentials: process.env.FAL_KEY
 });
 
-const PROMPT_TEMPLATE =
-  "Referring to the scene in image 1, imagine the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: {x,y,z,pitch,yaw,roll}";
 
 repairRouter.get("/api/repairs/list", async (req, res) => {
   try {
@@ -81,8 +79,7 @@ repairRouter.post(
     { name: "reference", maxCount: 1 },
     { name: "target", maxCount: 1 },
     { name: "delta_pose", maxCount: 1 },
-    { name: "camera", maxCount: 1 },
-    { name: "notes", maxCount: 1 }
+    { name: "camera", maxCount: 1 }
   ]),
   async (req, res) => {
     const start = Date.now();
@@ -107,7 +104,6 @@ repairRouter.post(
       const target = fields?.target?.[0];
       const deltaPoseRaw = fields?.delta_pose?.[0];
       const cameraRaw = fields?.camera?.[0];
-      const notes = fields?.notes?.[0];
 
       if (!reference || !target || !deltaPoseRaw || !cameraRaw) {
         return res.status(400).json({ error: "MISSING_REQUIRED_FILES" });
@@ -132,12 +128,10 @@ repairRouter.post(
         new Blob([Uint8Array.from(target.buffer)], { type: target.mimetype })
       );
 
-      const prompt = PROMPT_TEMPLATE.replace(
-        "{x,y,z,pitch,yaw,roll}",
-        JSON.stringify({ x: deltaPose.x, y: deltaPose.y, z: deltaPose.z, pitch: deltaPose.pitch, yaw: deltaPose.yaw, roll: deltaPose.roll })
-      );
-
-      withNotes = notes ? `${prompt}\n${notes.buffer.toString("utf8")}` : prompt;
+      withNotes = String(req.body.prompt || "").trim();
+      if (!withNotes) {
+        return res.status(400).json({ error: "MISSING_PROMPT" });
+      }
 
       const result = await Promise.race([
         fal.subscribe(config.falModel, {

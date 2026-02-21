@@ -339,7 +339,7 @@ async function updatePromptPreview() {
     const pose = JSON.parse(deltaPoseText);
     const fmt = v => (typeof v === 'number' ? parseFloat(v.toFixed(4)) : v);
     const poseStr = JSON.stringify({ x: fmt(pose.x), y: fmt(pose.y), z: fmt(pose.z), pitch: fmt(pose.pitch), yaw: fmt(pose.yaw), roll: fmt(pose.roll) });
-    let prompt = `Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: ${poseStr}`;
+    let prompt = `Referring to the scene in image 1, imagine the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: ${poseStr}`;
     const notes = document.getElementById('notesField').value.trim();
     if (notes) prompt += `\n\n${notes}`;
     document.getElementById('promptCapId').textContent = capId;
@@ -407,6 +407,12 @@ async function runRepairs() {
       const cameraText = await cap.cameraFile.text();
       const deltaPoseText = await cap.deltaPoseFile.text();
 
+      const pose = JSON.parse(deltaPoseText);
+      const fmt = v => (typeof v === 'number' ? parseFloat(v.toFixed(4)) : v);
+      const poseStr = JSON.stringify({ x: fmt(pose.x), y: fmt(pose.y), z: fmt(pose.z), pitch: fmt(pose.pitch), yaw: fmt(pose.yaw), roll: fmt(pose.roll) });
+      let prompt = `Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: ${poseStr}`;
+      if (notes) prompt += `\n\n${notes}`;
+
       const fd = new FormData();
       fd.append('session_id', sessionData.session_id);
       fd.append('session_bucket', sessionData.session_bucket || '');
@@ -414,13 +420,11 @@ async function runRepairs() {
       fd.append('source_id', activeSourceId);
       fd.append('cap_id', cap.capId);
       fd.append('paid_confirm', 'true');
+      fd.append('prompt', prompt);
       fd.append('reference', referenceFile, source.filename);
       fd.append('target', cap.targetFile, 'target.png');
       fd.append('delta_pose', new Blob([deltaPoseText], { type: 'application/json' }), 'delta_pose.json');
       fd.append('camera', new Blob([cameraText], { type: 'application/json' }), 'camera.json');
-      if (notes) {
-        fd.append('notes', new Blob([notes], { type: 'text/plain' }), 'notes.txt');
-      }
 
       const res = await fetch('/api/repair', { method: 'POST', body: fd });
 
