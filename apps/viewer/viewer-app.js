@@ -294,7 +294,9 @@ const {
   getLoadedGeneratedJobId,
   setOriginalPose,
   goToOriginalPose,
-  setAspectGuideAspect
+  setAspectGuideAspect,
+  setShotTilt,
+  getShotTilt
 } = sceneController;
 
 function sourceIdFromManifestPath(manifestPath) {
@@ -687,6 +689,8 @@ document.getElementById('activeCamera').onchange = () => {
 document.getElementById('resetCamera').onclick = () => {
   resetActiveCamera();
   updateCameraPanel();
+  const tiltDisp = document.getElementById('shotTiltDisplay');
+  if (tiltDisp) tiltDisp.textContent = '0\u00B0';
 };
 document.getElementById('fitShotCamera').onclick = () => {
   if (!fitShotCameraToGeneratedScene({ resetDelta: true })) {
@@ -706,6 +710,17 @@ document.getElementById('goOriginalPose').onclick = () => {
   setControlsCamera('shot');
   updateCameraPanel();
 };
+
+// ── Keyboard: Q/E to tilt shot camera ─────────────────────
+document.addEventListener('keydown', (e) => {
+  if (getActiveCameraMode() !== 'shot') return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
+  if (e.key === 'q' || e.key === 'Q') setShotTilt(getShotTilt() - 1);
+  else if (e.key === 'e' || e.key === 'E') setShotTilt(getShotTilt() + 1);
+  else return;
+  const tiltDisp = document.getElementById('shotTiltDisplay');
+  if (tiltDisp) tiltDisp.textContent = `${getShotTilt()}\u00B0`;
+});
 
 // Start in pick state
 setUIState('pick');

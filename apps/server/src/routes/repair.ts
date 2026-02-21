@@ -38,7 +38,7 @@ fal.config({
 });
 
 const PROMPT_TEMPLATE =
-  "Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: {x,y,z,pitch,yaw,roll}";
+  "Referring to the scene in image 1, imagine the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: {x,y,z,pitch,yaw,roll}";
 
 repairRouter.get("/api/repairs/list", async (req, res) => {
   try {

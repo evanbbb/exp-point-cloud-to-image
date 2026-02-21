@@ -17,6 +17,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
   const notifiedCompletedJobs = new Set();
   let completionAudioContext = null;
   let guideAspect = null;
+  let shotTiltDeg = 0;
 
   function quantile(values, p) {
     if (!values?.length) return 0;
@@ -234,7 +235,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       z: shotCamera.position.z - SHOT_INITIAL_POS.z,
       pitch: toDegrees(shotCamera.rotation.x - SHOT_INITIAL_ROT.x),
       yaw: toDegrees(shotCamera.rotation.y - SHOT_INITIAL_ROT.y),
-      roll: toDegrees(shotCamera.rotation.z - SHOT_INITIAL_ROT.z)
+      roll: shotTiltDeg
     };
   }
 
@@ -289,6 +290,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       shotCamera.lookAt(0, 0, 0);
       shotCamera.fov = fov;
       shotCamera.updateProjectionMatrix();
+      shotTiltDeg = 0;
       setControlsCamera('shot');
     } else {
       orbitCamera.position.set(4, 3, 6);
@@ -320,6 +322,8 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     lensRow.style.display = mode === 'shot' ? '' : 'none';
     fitShotRow.style.display = mode === 'shot' ? '' : 'none';
     fitShotButton.disabled = !generatedSceneObject;
+    const tiltHintRow = document.getElementById('tiltHintRow');
+    if (tiltHintRow) tiltHintRow.style.display = mode === 'shot' ? '' : 'none';
     deltaSection.style.display = mode === 'shot' ? '' : 'none';
     if (mode === 'shot') {
       const delta = getShotDeltaPose();
@@ -379,6 +383,15 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       controls.update();
       const activeMode = getActiveCameraMode();
       if (activeMode === 'orbit') orbitTarget.copy(controls.target);
+      if (activeMode === 'shot' && shotTiltDeg !== 0) {
+        const forward = new THREE.Vector3(0, 0, -1)
+          .applyQuaternion(shotCamera.quaternion).normalize();
+        shotCamera.quaternion.premultiply(
+          new THREE.Quaternion().setFromAxisAngle(
+            forward, THREE.MathUtils.degToRad(shotTiltDeg)
+          )
+        );
+      }
       cameraHelper.visible = activeMode !== 'shot';
       renderer.render(scene, getActiveRenderCamera());
       updateCameraPanel();
@@ -720,6 +733,8 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     isCompletedStatus,
     setOriginalPose: setShotBaselineFromCurrent,
     goToOriginalPose,
-    setAspectGuideAspect
+    setAspectGuideAspect,
+    setShotTilt(deg) { shotTiltDeg = Math.max(-45, Math.min(45, deg)); },
+    getShotTilt() { return shotTiltDeg; }
   };
 }

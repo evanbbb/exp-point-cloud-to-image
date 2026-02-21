@@ -79,22 +79,13 @@
 
         <hr class="session-divider" />
 
-        <p class="typography-body-muted">
-          Initialize a reference photo, adjust the camera, then hit
-          <em>Capture View</em> to export a target frame. Take your captures to the
-          <a href="/repair" style="color:var(--color-accent);">Repair app</a> when ready.
-        </p>
-
-        <div class="row">
-          <select id="sourceSelect"><option value="">Select image</option></select>
-          <label class="toggle-inline" for="toggleImage">
-            <input id="toggleImage" type="checkbox" checked />
-            <span>Show Image</span>
-          </label>
-          <input id="refFile" type="file" accept="image/*" style="display:none" />
-          <span id="refFileName" class="typography-label"></span>
-          <span id="refFileDims" class="typography-label" style="display:none"></span>
-        </div>
+        <ol class="typography-body-muted" style="padding-left:16px; line-height:2;">
+          <li>Select image from dropdown.</li>
+          <li>Click <em>Start Generation</em> to create 3D data.</li>
+          <li>Within Shot Camera, mimic original image then click <em>Set Original View</em>.</li>
+          <li>Move Shot Camera to new angle and click <em>Capture New View</em>.</li>
+          <li>Jump to <a href="/repair" style="color:var(--color-accent);">Repair tab</a>.</li>
+        </ol>
 
         <div class="scene-row">
           <div class="scene-canvas-wrap">
@@ -102,6 +93,7 @@
               <canvas id="scene" width="960" height="540"></canvas>
               <div id="aspectGuide" class="aspect-guide" style="display:none;"></div>
             </div>
+            <p style="font-size:11px; color:var(--color-text-muted); margin-top:6px;">mouse left: orbit &nbsp;|&nbsp; wheel: zoom &nbsp;|&nbsp; mouse right: pan &nbsp;|&nbsp; Q/E: tilt</p>
             <div class="capture-workflow-row">
               <div class="capture-workflow-left">
                 <button id="setOriginalPose" type="button">Set Original View</button>
@@ -132,6 +124,9 @@
               </div>
               <div id="fitShotRow" class="row" style="margin-bottom:8px;display:none;">
                 <button id="fitShotCamera" type="button">Fit Shot Camera</button>
+              </div>
+              <div id="tiltHintRow" style="display:none; font-size:11px; color:var(--color-text-muted); margin-top:4px; margin-bottom:8px;">
+                Q / E to tilt &nbsp;&middot;&nbsp; <span id="shotTiltDisplay">0&deg;</span>
               </div>
               <button id="resetCamera" class="icon-btn" title="Reset active camera">
                 <i class="ph ph-arrows-counter-clockwise" aria-hidden="true"></i>
@@ -165,7 +160,17 @@
         </div>
 
         <div class="section">
-          <div class="section-label">Generation</div>
+          <div class="section-label">2D Image TO 3D Cloud</div>
+          <div class="row" style="margin-bottom:8px;">
+            <select id="sourceSelect"><option value="">Select image</option></select>
+            <label class="toggle-inline" for="toggleImage">
+              <input id="toggleImage" type="checkbox" checked />
+              <span>Show Image</span>
+            </label>
+            <input id="refFile" type="file" accept="image/*" style="display:none" />
+            <span id="refFileName" class="typography-label"></span>
+            <span id="refFileDims" class="typography-label" style="display:none"></span>
+          </div>
           <div class="row">
             <button id="start">Start Generation</button>
             <button id="clearGenerated">Unload Scene</button>
