@@ -1,15 +1,38 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { generateRequestSchema, type GenerateJob } from "../../../../shared/schemas/generate-job";
 import { config } from "./config";
 import { findCompletedJob, findInFlightJob, loadJob, upsertJob } from "./jobs";
-import { parseSessionBucket, parseSessionId, resolveWithin, sessionBaseRelativePath } from "./paths";
+import { parseSessionBucket, parseSessionId, resolveWithin } from "./paths";
 
 const MAX_LOG_TAIL = 200;
 const activeGenerationProcesses = new Map<string, ChildProcess>();
 const cancelRequestedJobs = new Set<string>();
+
+type PendingReference = {
+  sessionId: string;
+  sessionBucket: string | null;
+  sourceId: string;
+  filename: string;
+  mimeType: string;
+  buffer: Buffer;
+  createdAt: number;
+};
+
+type GenerationAssets = {
+  sessionId: string;
+  sessionBucket: string | null;
+  manifestPath: string;
+  plyPath: string;
+  manifestBuffer: Buffer;
+  plyBuffer: Buffer;
+};
+
+const pendingReferences = new Map<string, PendingReference>();
+const generationAssets = new Map<string, GenerationAssets>();
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -34,36 +57,77 @@ function inferProgressFromLog(line: string, current: number): number {
   return current;
 }
 
-function toShotsAssetPath(absolutePath: string): string {
-  const rel = path.relative(config.shotsRoot, absolutePath).split(path.sep).join("/");
-  return `shots/${rel}`;
+function safeReferenceFilename(raw: string): string {
+  const name = path.basename(String(raw ?? "").trim() || "reference.png");
+  return name || "reference.png";
 }
 
-function resolveReferenceImagePath(referenceImagePath: string): string {
-  const normalized = String(referenceImagePath ?? "").replace(/^\/+/, "");
-  if (normalized.startsWith("shots/")) {
-    return resolveWithin(config.shotsRoot, normalized.slice("shots/".length));
+export function storeReferenceUpload(input: {
+  sessionId: string;
+  sessionBucket: string | null;
+  sourceId: string;
+  filename: string;
+  mimeType: string;
+  buffer: Buffer;
+}): string {
+  const refId = `ref_${randomUUID().slice(0, 8)}`;
+  pendingReferences.set(refId, {
+    sessionId: input.sessionId,
+    sessionBucket: input.sessionBucket,
+    sourceId: input.sourceId,
+    filename: safeReferenceFilename(input.filename),
+    mimeType: input.mimeType,
+    buffer: Buffer.from(input.buffer),
+    createdAt: Date.now()
+  });
+  return `memory://${refId}`;
+}
+
+async function materializeReference(referenceImagePath: string, sessionId: string, sessionBucket: string | null): Promise<{
+  referencePath: string;
+  tempRoot: string | null;
+}> {
+  const raw = String(referenceImagePath ?? "").trim();
+  if (!raw) throw new Error("INVALID_REFERENCE_IMAGE_PATH");
+
+  if (raw.startsWith("memory://")) {
+    const refId = raw.slice("memory://".length);
+    const pending = pendingReferences.get(refId);
+    if (!pending) throw new Error("MISSING_REFERENCE_FILE");
+    pendingReferences.delete(refId);
+    if (pending.sessionId !== sessionId || (pending.sessionBucket ?? null) !== (sessionBucket ?? null)) {
+      throw new Error("INVALID_SESSION_PATH");
+    }
+
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "istanbul3d-gen-"));
+    const inputDir = path.join(tempRoot, "input");
+    await fs.mkdir(inputDir, { recursive: true });
+    const referencePath = path.join(inputDir, pending.filename);
+    await fs.writeFile(referencePath, pending.buffer);
+    return { referencePath, tempRoot };
   }
-  return resolveWithin(config.repoRoot, normalized);
+
+  const normalized = raw.replace(/^\/+/, "");
+  if (normalized.startsWith("shots/")) {
+    return { referencePath: resolveWithin(config.shotsRoot, normalized.slice("shots/".length)), tempRoot: null };
+  }
+  return { referencePath: resolveWithin(config.repoRoot, normalized), tempRoot: null };
 }
 
-async function writeRealManifest(referencePath: string, plyAbsPath: string): Promise<string> {
-  const refDir = path.dirname(referencePath);
-  const manifestPath = path.join(refDir, "scene", "manifest.json");
-  await fs.mkdir(path.dirname(manifestPath), { recursive: true });
-  await fs.writeFile(
-    manifestPath,
-    JSON.stringify(
-      {
-        version: "1.0",
-        generated_at: nowIso(),
-        ply_path: toShotsAssetPath(plyAbsPath)
-      },
-      null,
-      2
-    )
-  );
-  return toShotsAssetPath(manifestPath);
+async function findGeneratedPly(sceneDir: string, referencePath: string): Promise<string> {
+  const refStem = path.basename(referencePath, path.extname(referencePath));
+  const expected = path.join(sceneDir, `${refStem}.ply`);
+  try {
+    await fs.access(expected);
+    return expected;
+  } catch {
+    const entries = await fs.readdir(sceneDir);
+    const candidate = entries.find(name => name.toLowerCase().endsWith(".ply"));
+    if (!candidate) {
+      throw new Error("ML_SHARP_OUTPUT_MISSING_PLY");
+    }
+    return path.join(sceneDir, candidate);
+  }
 }
 
 function runMlSharp(
@@ -117,12 +181,8 @@ function runMlSharp(
       }
     }
 
-    child.stdout?.on("data", (chunk: Buffer) => {
-      emitLines(chunk.toString(), false);
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      emitLines(chunk.toString(), true);
-    });
+    child.stdout?.on("data", (chunk: Buffer) => emitLines(chunk.toString(), false));
+    child.stderr?.on("data", (chunk: Buffer) => emitLines(chunk.toString(), true));
 
     const timer = setTimeout(() => {
       child.kill();
@@ -156,30 +216,16 @@ export async function startGeneration(input: unknown): Promise<{
   const body = generateRequestSchema.parse(input ?? {});
   const sessionId = parseSessionId(body.session_id);
   const sessionBucket = parseSessionBucket(body.session_bucket ?? "");
-  const sessionRoot = resolveWithin(config.shotsRoot, sessionBaseRelativePath(sessionId, sessionBucket));
-  const referencePath = resolveReferenceImagePath(body.reference_image_path);
-  if (!referencePath.startsWith(sessionRoot + path.sep)) {
-    throw new Error("INVALID_SESSION_PATH");
-  }
-
-  await fs.access(referencePath);
 
   if (!body.force_regenerate) {
-    const refDir = path.dirname(referencePath);
-    const manifestPath = path.join(refDir, "scene", "manifest.json");
-    try {
-      await fs.access(manifestPath);
-      const completed = await findCompletedJob(sessionId, sessionBucket);
-      if (completed) {
-        return {
-          job_id: completed.job_id,
-          status: "completed",
-          session_id: completed.session_id,
-          created_at: completed.created_at
-        };
-      }
-    } catch {
-      // No completed manifest yet; continue with normal flow.
+    const completed = await findCompletedJob(sessionId, sessionBucket);
+    if (completed) {
+      return {
+        job_id: completed.job_id,
+        status: "completed",
+        session_id: completed.session_id,
+        created_at: completed.created_at
+      };
     }
 
     const existing = await findInFlightJob(sessionId, sessionBucket);
@@ -210,6 +256,7 @@ export async function startGeneration(input: unknown): Promise<{
 
   setImmediate(async () => {
     let writeChain = Promise.resolve();
+    let tempRoot: string | null = null;
     const persistJob = () => {
       const snapshot: GenerateJob = {
         ...job,
@@ -226,8 +273,12 @@ export async function startGeneration(input: unknown): Promise<{
       job = { ...job, status: "running", stage: "running_ml_sharp", progress_percent: 10, updated_at: nowIso() };
       await persistJob();
 
-      const refDir = path.dirname(referencePath);
-      const sceneDir = path.join(refDir, "scene");
+      const materialized = await materializeReference(body.reference_image_path, sessionId, sessionBucket);
+      tempRoot = materialized.tempRoot;
+      const referencePath = materialized.referencePath;
+      await fs.access(referencePath);
+
+      const sceneDir = path.join(tempRoot ?? path.dirname(referencePath), "scene");
       await fs.mkdir(sceneDir, { recursive: true });
 
       await runMlSharp(referencePath, sceneDir, jobId, (line) => {
@@ -245,9 +296,30 @@ export async function startGeneration(input: unknown): Promise<{
       job = { ...job, stage: "writing_outputs", progress_percent: 90, updated_at: nowIso() };
       await persistJob();
 
-      const refStem = path.basename(referencePath, path.extname(referencePath));
-      const plyAbsPath = path.join(sceneDir, `${refStem}.ply`);
-      const manifestPath = await writeRealManifest(referencePath, plyAbsPath);
+      const plyAbsPath = await findGeneratedPly(sceneDir, referencePath);
+      const plyBuffer = await fs.readFile(plyAbsPath);
+      const manifestPath = `/api/generate/${jobId}/asset/manifest.json`;
+      const plyPath = `/api/generate/${jobId}/asset/scene.ply`;
+      const manifestBuffer = Buffer.from(
+        JSON.stringify(
+          {
+            version: "1.0",
+            generated_at: nowIso(),
+            ply_path: plyPath
+          },
+          null,
+          2
+        )
+      );
+
+      generationAssets.set(jobId, {
+        sessionId,
+        sessionBucket,
+        manifestPath,
+        plyPath,
+        manifestBuffer,
+        plyBuffer
+      });
 
       job = {
         ...job,
@@ -278,6 +350,13 @@ export async function startGeneration(input: unknown): Promise<{
     } finally {
       cancelRequestedJobs.delete(jobId);
       activeGenerationProcesses.delete(jobId);
+      if (tempRoot) {
+        try {
+          await fs.rm(tempRoot, { recursive: true, force: true });
+        } catch {
+          // ignore temp cleanup failures
+        }
+      }
     }
   });
 
@@ -297,6 +376,22 @@ export async function getGenerationStatus(
   const sessionId = parseSessionId(sessionIdRaw);
   const sessionBucket = parseSessionBucket(sessionBucketRaw);
   return loadJob(sessionId, sessionBucket, jobId);
+}
+
+export async function getGenerationAsset(
+  jobId: string,
+  assetName: string
+): Promise<{ contentType: string; body: Buffer } | null> {
+  const assets = generationAssets.get(jobId);
+  if (!assets) return null;
+
+  if (assetName === "manifest.json") {
+    return { contentType: "application/json; charset=utf-8", body: assets.manifestBuffer };
+  }
+  if (assetName === "scene.ply") {
+    return { contentType: "application/octet-stream", body: assets.plyBuffer };
+  }
+  return null;
 }
 
 export async function cancelGeneration(

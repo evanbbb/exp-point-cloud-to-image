@@ -3,6 +3,10 @@ import { createSceneController } from './viewer-scene.js';
 
 const SESSION_FILE = 'istanbul3d_session.json';
 const lensFov = { '24mm': 84, '35mm': 63, '50mm': 47, '85mm': 28 };
+const WORKING_FOLDER_DB = 'istanbul3d-working-folder';
+const WORKING_FOLDER_STORE = 'state';
+const WORKING_FOLDER_KEY = 'session_dir_handle';
+const WORKSPACE_SETUP_URL = '/workspace?next=/viewer';
 
 let sessionDirHandle = null;
 let sessionData = null;
@@ -10,7 +14,6 @@ let sessionData = null;
 
 function setUIState(state) {
   document.getElementById('state-pick').style.display    = state === 'pick'    ? '' : 'none';
-  document.getElementById('state-confirm').style.display = state === 'confirm' ? '' : 'none';
   document.getElementById('state-ready').style.display   = state === 'ready'   ? '' : 'none';
 }
 
@@ -49,6 +52,44 @@ async function writeSessionFile() {
   const writable = await fh.createWritable();
   await writable.write(JSON.stringify(sessionData, null, 2));
   await writable.close();
+}
+
+function openWorkingFolderDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(WORKING_FOLDER_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(WORKING_FOLDER_STORE)) {
+        db.createObjectStore(WORKING_FOLDER_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_OPEN_FAILED'));
+  });
+}
+
+async function loadConnectedFolderHandle() {
+  const db = await openWorkingFolderDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(WORKING_FOLDER_STORE, 'readonly');
+      const store = tx.objectStore(WORKING_FOLDER_STORE);
+      const request = store.get(WORKING_FOLDER_KEY);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_READ_FAILED'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function ensureConnectedFolderPermission(dirHandle) {
+  try {
+    if ((await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
+    return (await dirHandle.requestPermission({ mode: 'readwrite' })) === 'granted';
+  } catch {
+    return false;
+  }
 }
 
 // ── Source helpers ─────────────────────────────────────────
@@ -154,15 +195,25 @@ async function migrateLegacySession() {
   await writeSessionFile();
 }
 
-// ── Folder picking ────────────────────────────────────────
+// ── Connected folder bootstrap ────────────────────────────
 
-async function pickFolder() {
-  if (!window.showDirectoryPicker) {
-    log('File System Access API is not available in this browser.');
+async function bootstrapFromConnectedFolder() {
+  if (!window.indexedDB || !window.showDirectoryPicker) {
+    setUIState('pick');
+    log('Browser does not support required file APIs.');
     return;
   }
   try {
-    const dirHandle = await window.showDirectoryPicker();
+    const dirHandle = await loadConnectedFolderHandle();
+    if (!dirHandle) {
+      window.location.assign(WORKSPACE_SETUP_URL);
+      return;
+    }
+    const granted = await ensureConnectedFolderPermission(dirHandle);
+    if (!granted) {
+      window.location.assign(WORKSPACE_SETUP_URL);
+      return;
+    }
     sessionDirHandle = dirHandle;
     const existing = await readSessionFile(dirHandle);
     if (existing) {
@@ -172,16 +223,15 @@ async function pickFolder() {
         await writeSessionFile();
       }
       await migrateLegacySession();
-      // Always open in a neutral state on reload; user explicitly picks a source.
       sessionData.active_source = null;
       await writeSessionFile();
       activateSession('Loaded existing session.');
-    } else {
-      document.getElementById('confirmFolderName').textContent = dirHandle.name;
-      setUIState('confirm');
+      return;
     }
+    await initializeSession();
   } catch (err) {
-    if (err.name !== 'AbortError') log({ error: String(err) });
+    setUIState('pick');
+    log({ error: String(err) });
   }
 }
 
@@ -256,10 +306,11 @@ const generationController = createGenerationController({
     const activeSource = getActiveSource();
     const imageToggle = document.getElementById('toggleImage');
     const shouldShowImage = !(imageToggle instanceof HTMLInputElement) || imageToggle.checked;
-    if (activeSource && shouldShowImage) {
+    if (activeSource) {
       const sourceFile = await loadSourceImageById(activeSource.id);
       setImagePlane(sourceFile);
-    } else if (!shouldShowImage) {
+      setImagePlaneVisible(shouldShowImage);
+    } else {
       setImagePlane(null);
     }
     const aspect = await getActiveSourceAspect();
@@ -418,13 +469,6 @@ async function readJsonResponse(res, label) {
 
 // ── Event handlers ────────────────────────────────────────
 
-document.getElementById('pickDirInit').onclick = pickFolder;
-document.getElementById('pickDirSwitch').onclick = pickFolder;
-// Note: File System Access API does not expose the full filesystem path,
-// so we can't open Finder directly. Show folder name as best fallback.
-document.getElementById('btnCancel').onclick = () => setUIState('pick');
-document.getElementById('btnInit').onclick = initializeSession;
-
 document.getElementById('start').onclick = async () => {
   try {
     await ensureCompletionAudioContext();
@@ -570,10 +614,27 @@ document.getElementById('clearGenerated').onclick = async () => {
   }
 };
 
-document.getElementById('toggleImage').onchange = (event) => {
+document.getElementById('toggleImage').onchange = async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) return;
-  setImagePlaneVisible(target.checked);
+  if (!target.checked) {
+    setImagePlaneVisible(false);
+    return;
+  }
+  const activeSource = getActiveSource();
+  if (!activeSource) {
+    setImagePlaneVisible(false);
+    return;
+  }
+  try {
+    const sourceFile = await loadSourceImageById(activeSource.id);
+    setImagePlane(sourceFile);
+    setImagePlaneVisible(true);
+    const aspect = await getActiveSourceAspect();
+    setAspectGuideAspect(aspect);
+  } catch (err) {
+    log({ error: String(err) });
+  }
 };
 
 document.getElementById('refFile').onchange = async () => {
@@ -724,3 +785,4 @@ document.addEventListener('keydown', (e) => {
 
 // Start in pick state
 setUIState('pick');
+bootstrapFromConnectedFolder();

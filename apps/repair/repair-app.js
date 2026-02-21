@@ -1,4 +1,8 @@
 const SESSION_FILE = 'istanbul3d_session.json';
+const WORKING_FOLDER_DB = 'istanbul3d-working-folder';
+const WORKING_FOLDER_STORE = 'state';
+const WORKING_FOLDER_KEY = 'session_dir_handle';
+const WORKSPACE_SETUP_URL = '/workspace?next=/repair';
 
 let sessionDirHandle = null;
 let sessionData = null;
@@ -58,6 +62,44 @@ async function readSessionFile(dirHandle) {
     return JSON.parse(await file.text());
   } catch {
     return null;
+  }
+}
+
+function openWorkingFolderDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(WORKING_FOLDER_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(WORKING_FOLDER_STORE)) {
+        db.createObjectStore(WORKING_FOLDER_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_OPEN_FAILED'));
+  });
+}
+
+async function loadConnectedFolderHandle() {
+  const db = await openWorkingFolderDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(WORKING_FOLDER_STORE, 'readonly');
+      const store = tx.objectStore(WORKING_FOLDER_STORE);
+      const request = store.get(WORKING_FOLDER_KEY);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_READ_FAILED'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function ensureConnectedFolderPermission(dirHandle) {
+  try {
+    if ((await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
+    return (await dirHandle.requestPermission({ mode: 'readwrite' })) === 'granted';
+  } catch {
+    return false;
   }
 }
 
@@ -273,10 +315,7 @@ async function updatePreviousRepairs() {
     for (const repair of repairs) {
       const card = document.createElement('div');
       card.className = 'capture-card';
-      const base = sessionData.session_bucket || repair.session_id;
-      const imgUrl = repair.output
-        ? `/shots/${base}/repairs/${repair.repair_id}/output/repaired.png`
-        : null;
+      const imgUrl = repair.output?.repaired_image_path || null;
       const dt = new Date(repair.created_at);
       const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
         + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -306,18 +345,6 @@ async function updatePreviousRepairs() {
         };
         actionsEl.appendChild(compareBtn);
       }
-      const folderBtn = document.createElement('button');
-      folderBtn.className = 'icon-btn compare-trigger';
-      folderBtn.title = 'Open in Finder';
-      folderBtn.innerHTML = '<i class="ph ph-folder-open"></i>';
-      folderBtn.onclick = async (e) => {
-        e.stopPropagation();
-        const relPath = `${base}/repairs/${repair.repair_id}/output`;
-        try {
-          await fetch('/api/open-folder', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rel_path: relPath }) });
-        } catch (err) { log({ error: `Failed to open folder: ${err}` }); }
-      };
-      actionsEl.appendChild(folderBtn);
       grid.appendChild(card);
     }
   } catch {
@@ -466,18 +493,29 @@ async function runRepairs() {
   log('Done.');
 }
 
-// ── Folder picking ──────────────────────────────────────────
+// ── Connected folder bootstrap ─────────────────────────────
 
-async function pickFolder() {
-  if (!window.showDirectoryPicker) {
-    log('File System Access API is not available in this browser.');
+async function bootstrapFromConnectedFolder() {
+  if (!window.indexedDB || !window.showDirectoryPicker) {
+    setUIState('pick');
+    log('Browser does not support required file APIs.');
     return;
   }
   try {
-    const dirHandle = await window.showDirectoryPicker();
+    const dirHandle = await loadConnectedFolderHandle();
+    if (!dirHandle) {
+      window.location.assign(WORKSPACE_SETUP_URL);
+      return;
+    }
+    const granted = await ensureConnectedFolderPermission(dirHandle);
+    if (!granted) {
+      window.location.assign(WORKSPACE_SETUP_URL);
+      return;
+    }
     const existing = await readSessionFile(dirHandle);
     if (!existing) {
-      log('No istanbul3d_session.json found in this folder. Pick a session folder created by the Viewer.');
+      setUIState('pick');
+      log('Connected folder has no istanbul3d_session.json yet. Start from Viewer first.');
       return;
     }
     sessionDirHandle = dirHandle;
@@ -485,7 +523,8 @@ async function pickFolder() {
     activeSourceId = null;
     activateSession();
   } catch (err) {
-    if (err.name !== 'AbortError') log({ error: String(err) });
+    setUIState('pick');
+    log({ error: String(err) });
   }
 }
 
@@ -513,9 +552,6 @@ function activateSession() {
 
 // ── Event wiring ────────────────────────────────────────────
 
-document.getElementById('pickDirBtn').onclick = pickFolder;
-document.getElementById('switchDirBtn').onclick = pickFolder;
-
 document.getElementById('sourceSelect').onchange = () => {
   const val = document.getElementById('sourceSelect').value;
   activeSourceId = val || null;
@@ -538,20 +574,6 @@ document.getElementById('compareOverlay').onclick = (e) => {
 };
 document.getElementById('compareClose').onclick = closeCompare;
 
-document.getElementById('resultsList').onclick = async (event) => {
-  const btn = event.target.closest('[data-open-folder]');
-  if (!btn) return;
-  const relPath = btn.getAttribute('data-open-folder');
-  try {
-    await fetch('/api/open-folder', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rel_path: relPath })
-    });
-  } catch (err) {
-    log({ error: `Failed to open folder: ${err}` });
-  }
-};
-
 // Start in pick state
 setUIState('pick');
+bootstrapFromConnectedFolder();

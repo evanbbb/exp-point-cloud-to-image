@@ -11,6 +11,10 @@ export function createApp() {
   const app = express();
   app.use(express.json({ limit: "2mb" }));
 
+  app.get("/", (_req, res) => {
+    res.redirect("/workspace");
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, generation_mode: "real", shots_root: config.shotsRoot });
   });
@@ -35,6 +39,7 @@ export function createApp() {
   app.use(settingsRouter);
 
   app.use("/shots", express.static(config.shotsRoot));
+  app.use("/workspace", express.static(path.join(config.repoRoot, "apps/workspace")));
   app.use("/viewer", express.static(path.join(config.repoRoot, "apps/viewer")));
   app.use("/repair", express.static(path.join(config.repoRoot, "apps/repair")));
   app.use("/settings", express.static(path.join(config.repoRoot, "apps/settings")));

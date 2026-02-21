@@ -23,6 +23,7 @@
     <nav class="sidebar">
       <div class="sidebar-title">Istanbul3D</div>
       <div class="sidebar-nav">
+        <a href="/workspace">Workspace</a>
         <a href="/viewer" class="active">Viewer</a>
         <a href="/repair">Repair</a>
       </div>
@@ -36,32 +37,16 @@
 
     <main class="canvas-area">
 
-      <!-- ── State: pick ── -->
+      <!-- ── State: waiting for connected folder ── -->
       <div id="state-pick">
         <h1 class="typography-h1">Part A: 2D Image → 3D Capture</h1>
         <div class="pick-landing">
           <p class="typography-body-muted">
             <strong style="color:var(--color-text);">Step 1 of 2.</strong>
-            Select a folder on your machine to use as the working session.
-            The app will create a session file inside it and store all captures, job IDs, and metadata there.
+            A working folder must be selected before opening this page.
+            Once connected, the app stores sources, captures, jobs, and metadata in that folder.
           </p>
-          <button id="pickDirInit" class="primary">Pick Session Folder</button>
-        </div>
-      </div>
-
-      <!-- ── State: confirm new folder ── -->
-      <div id="state-confirm" style="display:none">
-        <h1 class="typography-h1">Part A: 2D Image → 3D Capture</h1>
-        <div class="confirm-card">
-          <p class="typography-body-muted">
-            <strong id="confirmFolderName" style="color:var(--color-text);"></strong>
-            doesn't have an Istanbul3D session file yet.
-            Initialize it as a session folder?
-          </p>
-          <div class="row">
-            <button id="btnInit" class="primary">Initialize</button>
-            <button id="btnCancel">Pick Different Folder</button>
-          </div>
+          <a href="/workspace" style="color:var(--color-accent);font-size:12px;">Go to Workspace Setup</a>
         </div>
       </div>
 
@@ -71,9 +56,6 @@
           <h1 class="typography-h1">Part A: 2D Image → 3D Capture</h1>
           <div class="session-id-row">
             <p class="session-id-display">Session: <span id="sessionDisplay"></span></p>
-            <button id="pickDirSwitch" class="icon-btn" title="Switch folder">
-              <i class="ph ph-arrows-counter-clockwise" aria-hidden="true"></i>
-            </button>
           </div>
         </div>
 

@@ -7,7 +7,16 @@ import { upsertJob } from "../apps/server/src/lib/jobs";
 import type { GenerateJob } from "../shared/schemas/generate-job";
 
 const sessionId = "SESSION_20990101_000001";
-const sessionRoot = path.join(process.cwd(), "shots", sessionId);
+const storageRoot = process.cwd();
+const sessionRoot = path.join(storageRoot, sessionId);
+
+function resolveAssetPath(assetPath: string): string {
+  const normalized = String(assetPath).replace(/^\/+/, "");
+  if (normalized.startsWith("shots/")) {
+    return path.join(storageRoot, normalized.slice("shots/".length));
+  }
+  return path.join(storageRoot, normalized);
+}
 
 test.after(async () => {
   await fs.rm(sessionRoot, { recursive: true, force: true });
@@ -54,12 +63,12 @@ test("generation service uses real ml-sharp execution path", async () => {
 
   if (statusRes.status === "completed") {
     assert.ok(statusRes.scene_manifest_path);
-    const manifestPath = path.join(process.cwd(), statusRes.scene_manifest_path as string);
+    const manifestPath = resolveAssetPath(statusRes.scene_manifest_path as string);
     const manifestRaw = await fs.readFile(manifestPath, "utf8");
     const manifest = JSON.parse(manifestRaw) as { version: string; ply_path?: string };
     assert.equal(manifest.version, "1.0");
     assert.ok(manifest.ply_path);
-    const plyPath = path.join(process.cwd(), manifest.ply_path as string);
+    const plyPath = resolveAssetPath(manifest.ply_path as string);
     await fs.access(plyPath);
     return;
   }

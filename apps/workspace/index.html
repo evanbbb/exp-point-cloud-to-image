@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Istanbul3D Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      :root {
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        --color-text: #FFFFFF;
+        --color-text-muted: #A0A0A0;
+        --color-accent: #007AFF;
+        --color-menu-bg: #212121;
+        --color-canvas-bg: #282828;
+        --color-input-bg: #333333;
+        --color-border: rgba(255, 255, 255, 0.15);
+        --sidebar-width: 200px;
+      }
+
+      html, body { height: 100%; background: var(--color-canvas-bg); color: var(--color-text); }
+      body { display: flex; }
+
+      .sidebar-title {
+        padding: 0 24px 20px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--color-text);
+        letter-spacing: 0.05em;
+      }
+
+      .sidebar {
+        width: var(--sidebar-width);
+        background: var(--color-menu-bg);
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 24px 0;
+      }
+
+      .sidebar-nav {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 0 12px;
+      }
+
+      .sidebar-nav a {
+        display: block;
+        padding: 8px 12px;
+        border-radius: 4px;
+        text-decoration: none;
+        color: var(--color-text-muted);
+        font-size: 13px;
+        font-weight: 500;
+        border-left: 2px solid transparent;
+        transition: color 0.15s;
+      }
+
+      .sidebar-nav a:hover { color: var(--color-text); }
+
+      .sidebar-nav a.active {
+        color: var(--color-text);
+        border-left-color: var(--color-accent);
+      }
+
+      .sidebar-footer { padding: 0 12px; }
+
+      .sidebar-footer a {
+        display: block;
+        padding: 8px 12px;
+        text-decoration: none;
+        color: var(--color-text-muted);
+        font-size: 13px;
+        transition: color 0.15s;
+      }
+
+      .sidebar-footer a:hover { color: var(--color-text); }
+
+      .canvas-area {
+        margin-left: var(--sidebar-width);
+        flex: 1;
+        padding: 32px;
+        overflow-y: auto;
+        min-height: 100vh;
+      }
+
+      .typography-h1 { font-size: 20px; font-weight: 700; color: var(--color-text); margin-bottom: 12px; }
+      .typography-body-muted { font-size: 11px; color: var(--color-text-muted); line-height: 1.7; margin-bottom: 24px; max-width: 620px; }
+
+      .section {
+        border-top: 1px solid var(--color-border);
+        margin-top: 20px;
+        padding-top: 16px;
+      }
+
+      .section-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+      }
+
+      .row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+
+      button {
+        padding: 7px 14px;
+        background: transparent;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, filter 150ms ease, transform 120ms ease;
+      }
+
+      @media (hover: hover) {
+        button:not(:disabled):hover { filter: brightness(1.08); }
+      }
+
+      button:not(:disabled):active { transform: translateY(1px) scale(0.98); }
+
+      button.primary {
+        background: var(--color-accent);
+        border-color: var(--color-accent);
+        color: #fff;
+      }
+
+      button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .folder-status {
+        font-size: 11px;
+        color: var(--color-text-muted);
+        margin-bottom: 12px;
+      }
+
+      .folder-status--ok { color: #22C55E; }
+      .folder-status--warn { color: #F59E0B; }
+
+      .route-buttons {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="sidebar">
+      <div class="sidebar-title">Istanbul3D</div>
+      <div class="sidebar-nav">
+        <a href="/workspace" class="active">Workspace</a>
+        <a href="/viewer">Viewer</a>
+        <a href="/repair">Repair</a>
+      </div>
+      <div class="sidebar-footer">
+        <a href="/settings" style="display:flex;align-items:center;gap:6px;">
+          <i class="ph ph-gear" aria-hidden="true"></i>
+          Settings
+        </a>
+      </div>
+    </nav>
+
+    <main class="canvas-area">
+      <h1 class="typography-h1">Workspace Setup</h1>
+      <p class="typography-body-muted">
+        Pick a working folder before using Viewer or Repair.
+        Sources, captures, generation artifacts, and repair outputs are read and written in this folder.
+      </p>
+
+      <div class="section">
+        <div class="section-label">Working Folder</div>
+        <p id="folderStatus" class="folder-status">No folder selected.</p>
+        <div class="row">
+          <button id="pickFolderBtn" class="primary">Select Working Folder</button>
+          <button id="clearFolderBtn">Clear Saved Folder</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">Continue</div>
+        <div class="route-buttons">
+          <button id="openViewerBtn" disabled>Open Viewer</button>
+          <button id="openRepairBtn" disabled>Open Repair</button>
+          <button id="openSettingsBtn">Open Settings</button>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const WORKING_FOLDER_DB = 'istanbul3d-working-folder';
+      const WORKING_FOLDER_STORE = 'state';
+      const WORKING_FOLDER_KEY = 'session_dir_handle';
+      const folderStatus = document.getElementById('folderStatus');
+      const pickFolderBtn = document.getElementById('pickFolderBtn');
+      const clearFolderBtn = document.getElementById('clearFolderBtn');
+      const openViewerBtn = document.getElementById('openViewerBtn');
+      const openRepairBtn = document.getElementById('openRepairBtn');
+      const openSettingsBtn = document.getElementById('openSettingsBtn');
+      let activeHandle = null;
+
+      function parseNextPath() {
+        const raw = new URLSearchParams(window.location.search).get('next') || '';
+        if (!raw.startsWith('/') || raw.startsWith('//')) return null;
+        if (raw === '/viewer' || raw === '/repair') return raw;
+        return null;
+      }
+
+      function openDb() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(WORKING_FOLDER_DB, 1);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(WORKING_FOLDER_STORE)) {
+              db.createObjectStore(WORKING_FOLDER_STORE);
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_OPEN_FAILED'));
+        });
+      }
+
+      async function loadFolderHandle() {
+        const db = await openDb();
+        try {
+          return await new Promise((resolve, reject) => {
+            const tx = db.transaction(WORKING_FOLDER_STORE, 'readonly');
+            const store = tx.objectStore(WORKING_FOLDER_STORE);
+            const request = store.get(WORKING_FOLDER_KEY);
+            request.onsuccess = () => resolve(request.result ?? null);
+            request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_READ_FAILED'));
+          });
+        } finally {
+          db.close();
+        }
+      }
+
+      async function saveFolderHandle(handle) {
+        const db = await openDb();
+        try {
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(WORKING_FOLDER_STORE, 'readwrite');
+            const store = tx.objectStore(WORKING_FOLDER_STORE);
+            const request = store.put(handle, WORKING_FOLDER_KEY);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_WRITE_FAILED'));
+          });
+        } finally {
+          db.close();
+        }
+      }
+
+      async function clearFolderHandle() {
+        const db = await openDb();
+        try {
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(WORKING_FOLDER_STORE, 'readwrite');
+            const store = tx.objectStore(WORKING_FOLDER_STORE);
+            const request = store.delete(WORKING_FOLDER_KEY);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_DELETE_FAILED'));
+          });
+        } finally {
+          db.close();
+        }
+      }
+
+      async function ensurePermission(handle) {
+        try {
+          if ((await handle.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
+          return (await handle.requestPermission({ mode: 'readwrite' })) === 'granted';
+        } catch {
+          return false;
+        }
+      }
+
+      function setContinueEnabled(enabled) {
+        openViewerBtn.disabled = !enabled;
+        openRepairBtn.disabled = !enabled;
+      }
+
+      function setStatus(text, state = 'neutral') {
+        folderStatus.textContent = text;
+        folderStatus.className = 'folder-status';
+        if (state === 'ok') folderStatus.classList.add('folder-status--ok');
+        if (state === 'warn') folderStatus.classList.add('folder-status--warn');
+      }
+
+      async function refreshStatus() {
+        if (!window.indexedDB || !window.showDirectoryPicker) {
+          activeHandle = null;
+          setContinueEnabled(false);
+          setStatus('Browser does not support required file APIs.', 'warn');
+          pickFolderBtn.disabled = true;
+          clearFolderBtn.disabled = true;
+          return;
+        }
+        const handle = await loadFolderHandle();
+        if (!handle) {
+          activeHandle = null;
+          setContinueEnabled(false);
+          setStatus('No folder selected.');
+          return;
+        }
+        const granted = await ensurePermission(handle);
+        if (!granted) {
+          activeHandle = null;
+          setContinueEnabled(false);
+          setStatus('Saved folder permission was denied. Re-select the folder.', 'warn');
+          return;
+        }
+        activeHandle = handle;
+        setContinueEnabled(true);
+        setStatus(`Connected: ${handle.name}`, 'ok');
+      }
+
+      pickFolderBtn.addEventListener('click', async () => {
+        if (!window.showDirectoryPicker) return;
+        try {
+          const handle = await window.showDirectoryPicker();
+          const granted = await ensurePermission(handle);
+          if (!granted) {
+            setStatus('Permission denied. Folder was not saved.', 'warn');
+            return;
+          }
+          await saveFolderHandle(handle);
+          await refreshStatus();
+          const next = parseNextPath();
+          if (next) window.location.assign(next);
+        } catch (error) {
+          if (error?.name !== 'AbortError') {
+            setStatus(`Failed to save folder: ${String(error)}`, 'warn');
+          }
+        }
+      });
+
+      clearFolderBtn.addEventListener('click', async () => {
+        await clearFolderHandle();
+        await refreshStatus();
+      });
+
+      openViewerBtn.addEventListener('click', () => window.location.assign('/viewer'));
+      openRepairBtn.addEventListener('click', () => window.location.assign('/repair'));
+      openSettingsBtn.addEventListener('click', () => window.location.assign('/settings'));
+
+      refreshStatus();
+    </script>
+  </body>
+</html>

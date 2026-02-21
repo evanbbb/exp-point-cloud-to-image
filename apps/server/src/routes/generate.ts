@@ -1,14 +1,17 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { Router } from "express";
 import multer from "multer";
 import { generateStatusSchema } from "../../../../shared/schemas/generate-job";
-import { config } from "../lib/config";
-import { cancelGeneration, getGenerationStatus, startGeneration } from "../lib/generation-service";
-import { openPathInFileManager } from "../lib/open-path";
-import { parseSessionBucket, parseSessionId, resolveWithin, sessionBaseRelativePath } from "../lib/paths";
+import {
+  cancelGeneration,
+  getGenerationAsset,
+  getGenerationStatus,
+  startGeneration,
+  storeReferenceUpload
+} from "../lib/generation-service";
+import { parseSessionBucket, parseSessionId, sessionBaseRelativePath } from "../lib/paths";
 
 export const generateRouter = Router();
+
 function invalidSessionMessage(error: unknown): string | null {
   if (!(error instanceof Error)) return null;
   return ["INVALID_SESSION_ID", "INVALID_SESSION_BUCKET", "INVALID_SESSION_PATH"].includes(error.message)
@@ -42,23 +45,22 @@ generateRouter.post("/api/generate/sync-reference", upload.single("reference"), 
     }
 
     const rawFilename = String(req.body.filename ?? uploaded.originalname ?? "").trim();
-    const filename = path.basename(rawFilename);
-    if (!filename) {
-      return res.status(400).json({ error: "INVALID_FILENAME" });
-    }
-
-    const sessionRel = sessionBaseRelativePath(sessionId, sessionBucket);
-    const srcDir = resolveWithin(config.shotsRoot, `${sessionRel}/source/${sourceId}`);
-    await fs.mkdir(srcDir, { recursive: true });
-    const outPath = path.join(srcDir, filename);
-    await fs.writeFile(outPath, uploaded.buffer);
+    const filename = rawFilename || uploaded.originalname || "reference.png";
+    const referenceImagePath = storeReferenceUpload({
+      sessionId,
+      sessionBucket,
+      sourceId,
+      filename,
+      mimeType: uploaded.mimetype,
+      buffer: uploaded.buffer
+    });
 
     return res.status(200).json({
       session_id: sessionId,
       session_bucket: sessionBucket ?? undefined,
       source_id: sourceId,
       filename,
-      reference_image_path: `shots/${sessionRel}/source/${sourceId}/${filename}`.split(path.sep).join("/")
+      reference_image_path: referenceImagePath
     });
   } catch (error) {
     const invalidSession = invalidSessionMessage(error);
@@ -82,7 +84,6 @@ generateRouter.post(
       const sessionBucket = parseSessionBucket(String(req.body.session_bucket ?? ""));
       const sourceId = String(req.body.source_id ?? "");
       const captureId = String(req.body.capture_id ?? "");
-      const openFinder = String(req.body.open_finder ?? "") === "1";
       if (!/^src_\d{4}$/.test(sourceId)) {
         return res.status(400).json({ error: "INVALID_SOURCE_ID" });
       }
@@ -99,23 +100,13 @@ generateRouter.post(
       }
 
       const sessionRel = sessionBaseRelativePath(sessionId, sessionBucket);
-      const captureDir = resolveWithin(config.shotsRoot, `${sessionRel}/source/${sourceId}/captures/${captureId}`);
-      await fs.mkdir(captureDir, { recursive: true });
-      await fs.writeFile(path.join(captureDir, "target.png"), target.buffer);
-      await fs.writeFile(path.join(captureDir, "camera.json"), camera.buffer);
-      await fs.writeFile(path.join(captureDir, "delta_pose.json"), delta.buffer);
-
-      if (openFinder) {
-        await openPathInFileManager(captureDir);
-      }
-
       return res.status(200).json({
         session_id: sessionId,
         session_bucket: sessionBucket ?? undefined,
         source_id: sourceId,
         capture_id: captureId,
-        capture_path: `shots/${sessionRel}/source/${sourceId}/captures/${captureId}`.split(path.sep).join("/"),
-        finder_opened: openFinder
+        capture_path: `${sessionRel}/source/${sourceId}/captures/${captureId}`,
+        finder_opened: false
       });
     } catch (error) {
       const invalidSession = invalidSessionMessage(error);
@@ -181,5 +172,24 @@ generateRouter.get("/api/generate/:jobId", async (req, res) => {
       return res.status(400).json({ error: invalidSession });
     }
     return res.status(500).json({ error: "GENERATION_STATUS_FAILED", detail: errorDetail(error) });
+  }
+});
+
+generateRouter.get("/api/generate/:jobId/asset/:assetName", async (req, res) => {
+  try {
+    const jobId = String(req.params.jobId ?? "");
+    const assetName = String(req.params.assetName ?? "");
+    const asset = await getGenerationAsset(jobId, assetName);
+    if (!asset) {
+      return res.status(404).json({ error: "GENERATION_ASSET_NOT_FOUND" });
+    }
+    res.setHeader("content-type", asset.contentType);
+    return res.status(200).send(asset.body);
+  } catch (error) {
+    const invalidSession = invalidSessionMessage(error);
+    if (invalidSession) {
+      return res.status(400).json({ error: invalidSession });
+    }
+    return res.status(500).json({ error: "GENERATION_ASSET_FAILED", detail: errorDetail(error) });
   }
 });

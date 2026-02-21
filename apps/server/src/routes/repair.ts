@@ -1,15 +1,12 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { Router } from "express";
 import multer from "multer";
 import { fal } from "@fal-ai/client";
 import { deltaPoseSchema } from "../../../../shared/schemas/delta-pose";
 import { cameraSchema } from "../../../../shared/schemas/camera";
-import { repairMetaSchema, type RepairMeta } from "../../../../shared/schemas/repair-meta";
+import { type RepairMeta } from "../../../../shared/schemas/repair-meta";
 import { config } from "../lib/config";
 import { getFalKey } from "../lib/app-settings";
-import { parseSessionBucket, parseSessionId, resolveWithin, sessionBaseRelativePath } from "../lib/paths";
-import { writeRepairMeta } from "../lib/repair-meta";
+import { parseSessionBucket, parseSessionId, sessionBaseRelativePath } from "../lib/paths";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -17,6 +14,46 @@ const upload = multer({
     fileSize: 20 * 1024 * 1024
   }
 });
+
+type StoredRepair = {
+  meta: RepairMeta;
+  imageBuffer?: Buffer;
+};
+
+const repairsBySession = new Map<string, Map<string, StoredRepair>>();
+
+function sessionKey(sessionId: string, sessionBucket: string | null): string {
+  return `${sessionBucket ?? ""}::${sessionId}`;
+}
+
+function putRepair(sessionId: string, sessionBucket: string | null, repairId: string, entry: StoredRepair): void {
+  const key = sessionKey(sessionId, sessionBucket);
+  let sessionRepairs = repairsBySession.get(key);
+  if (!sessionRepairs) {
+    sessionRepairs = new Map<string, StoredRepair>();
+    repairsBySession.set(key, sessionRepairs);
+  }
+  sessionRepairs.set(repairId, {
+    meta: { ...entry.meta },
+    imageBuffer: entry.imageBuffer ? Buffer.from(entry.imageBuffer) : undefined
+  });
+}
+
+function listRepairs(sessionId: string, sessionBucket: string | null): RepairMeta[] {
+  const key = sessionKey(sessionId, sessionBucket);
+  const entries = repairsBySession.get(key);
+  if (!entries) return [];
+  const repairs = [...entries.values()].map(entry => ({ ...entry.meta }));
+  repairs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return repairs;
+}
+
+function getRepairImage(sessionId: string, sessionBucket: string | null, repairId: string): Buffer | null {
+  const key = sessionKey(sessionId, sessionBucket);
+  const entry = repairsBySession.get(key)?.get(repairId);
+  if (!entry?.imageBuffer) return null;
+  return Buffer.from(entry.imageBuffer);
+}
 
 export const repairRouter = Router();
 
@@ -38,34 +75,28 @@ repairRouter.get("/api/repairs/list", async (req, res) => {
   try {
     const sessionId = parseSessionId(String(req.query.session_id ?? ""));
     const sessionBucket = parseSessionBucket(String(req.query.session_bucket ?? ""));
-    const sessionRel = sessionBaseRelativePath(sessionId, sessionBucket);
-
-    const repairsDir = resolveWithin(config.shotsRoot, `${sessionRel}/repairs`);
-    let entries: string[] = [];
-    try {
-      entries = (await fs.readdir(repairsDir)).filter(e => /^repair_/.test(e));
-    } catch {
-      return res.json({ repairs: [] });
-    }
-
-    const repairs: RepairMeta[] = [];
-    for (const entry of entries) {
-      try {
-        const metaPath = path.join(repairsDir, entry, "output", "repair_meta.json");
-        const text = await fs.readFile(metaPath, "utf8");
-        const meta = repairMetaSchema.parse(JSON.parse(text));
-        repairs.push(meta);
-      } catch {
-        // skip malformed or missing meta
-      }
-    }
-
-    repairs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return res.json({ repairs });
+    return res.json({ repairs: listRepairs(sessionId, sessionBucket) });
   } catch (error) {
     const invalidSession = invalidSessionMessage(error);
     if (invalidSession) return res.status(400).json({ error: invalidSession });
     return res.status(500).json({ error: "LIST_REPAIRS_FAILED" });
+  }
+});
+
+repairRouter.get("/api/repairs/:repairId/image", async (req, res) => {
+  try {
+    const sessionId = parseSessionId(String(req.query.session_id ?? ""));
+    const sessionBucket = parseSessionBucket(String(req.query.session_bucket ?? ""));
+    const repairId = String(req.params.repairId ?? "");
+    const image = getRepairImage(sessionId, sessionBucket, repairId);
+    if (!image) {
+      return res.status(404).json({ error: "REPAIR_IMAGE_NOT_FOUND" });
+    }
+    return res.type("image/png").send(image);
+  } catch (error) {
+    const invalidSession = invalidSessionMessage(error);
+    if (invalidSession) return res.status(400).json({ error: invalidSession });
+    return res.status(500).json({ error: "REPAIR_IMAGE_FAILED" });
   }
 });
 
@@ -160,13 +191,10 @@ repairRouter.post(
       const response = await fetch(imageUrl);
       const imageBuffer = Buffer.from(await response.arrayBuffer());
 
-      const width = imageBuffer.readUInt32BE(16);   // PNG IHDR bytes 16-19
-      const height = imageBuffer.readUInt32BE(20);  // PNG IHDR bytes 20-23
-
-      const outputDir = resolveWithin(config.shotsRoot, `${sessionRel}/repairs/${repairId}/output`);
-      await fs.mkdir(outputDir, { recursive: true });
-      const imagePath = path.join(outputDir, "repaired.png");
-      await fs.writeFile(imagePath, imageBuffer);
+      const width = imageBuffer.readUInt32BE(16);
+      const height = imageBuffer.readUInt32BE(20);
+      const bucketParam = sessionBucket ? `&session_bucket=${encodeURIComponent(sessionBucket)}` : "";
+      const repairedPath = `/api/repairs/${encodeURIComponent(repairId)}/image?session_id=${encodeURIComponent(sessionId)}${bucketParam}`;
 
       const meta: RepairMeta = {
         schema_version: "1.0",
@@ -205,7 +233,7 @@ repairRouter.post(
           }
         },
         output: {
-          repaired_image_path: `${sessionRel}/repairs/${repairId}/output/repaired.png`,
+          repaired_image_path: repairedPath,
           width,
           height,
           bytes: imageBuffer.byteLength
@@ -213,8 +241,7 @@ repairRouter.post(
         error: null
       };
 
-      await writeRepairMeta(path.join(outputDir, "repair_meta.json"), meta);
-
+      putRepair(sessionId, sessionBucket, repairId, { meta, imageBuffer });
       return res.type("image/png").send(imageBuffer);
     } catch (error) {
       const invalidSession = invalidSessionMessage(error);
@@ -223,57 +250,51 @@ repairRouter.post(
       }
 
       if (sessionId && repairId && deltaPose && withNotes) {
-        try {
-          const failedOutputDir = resolveWithin(config.shotsRoot, `${sessionRel!}/repairs/${repairId}/output`);
-          await fs.mkdir(failedOutputDir, { recursive: true });
-          const isTimeout = error instanceof Error && error.message === "FAL_TIMEOUT";
-          const failureMeta: RepairMeta = {
-            schema_version: "1.0",
-            repair_id: repairId,
-            session_id: sessionId,
-            source_id: sourceId,
-            cap_id: capId,
-            created_at: new Date(start).toISOString(),
-            completed_at: new Date().toISOString(),
-            duration_ms: Date.now() - start,
-            status: "failed",
-            input: repairInputPaths(sessionRel!, repairId),
-            fal: {
-              model: config.falModel,
-              loras: [{ path: config.falLoraPath, scale: 1.0 }],
-              parameters: {
-                num_inference_steps: 28,
-                guidance_scale: 5,
-                output_format: "png",
-                num_images: 1,
-                seed: null
-              },
-              uploaded_reference_url: uploadedReferenceUrl,
-              uploaded_target_url: uploadedTargetUrl
+        const isTimeout = error instanceof Error && error.message === "FAL_TIMEOUT";
+        const failureMeta: RepairMeta = {
+          schema_version: "1.0",
+          repair_id: repairId,
+          session_id: sessionId,
+          source_id: sourceId,
+          cap_id: capId,
+          created_at: new Date(start).toISOString(),
+          completed_at: new Date().toISOString(),
+          duration_ms: Date.now() - start,
+          status: "failed",
+          input: repairInputPaths(sessionRel!, repairId),
+          fal: {
+            model: config.falModel,
+            loras: [{ path: config.falLoraPath, scale: 1.0 }],
+            parameters: {
+              num_inference_steps: 28,
+              guidance_scale: 5,
+              output_format: "png",
+              num_images: 1,
+              seed: null
             },
-            prompt: {
-              template_version: "1.0",
-              text: withNotes,
-              delta_pose_values: {
-                x: deltaPose.x,
-                y: deltaPose.y,
-                z: deltaPose.z,
-                pitch: deltaPose.pitch,
-                yaw: deltaPose.yaw,
-                roll: deltaPose.roll
-              }
-            },
-            output: undefined,
-            error: {
-              code: isTimeout ? "FAL_TIMEOUT" : "FAL_ERROR",
-              message: error instanceof Error ? error.message : "Unknown error",
-              retryable: isTimeout
+            uploaded_reference_url: uploadedReferenceUrl,
+            uploaded_target_url: uploadedTargetUrl
+          },
+          prompt: {
+            template_version: "1.0",
+            text: withNotes,
+            delta_pose_values: {
+              x: deltaPose.x,
+              y: deltaPose.y,
+              z: deltaPose.z,
+              pitch: deltaPose.pitch,
+              yaw: deltaPose.yaw,
+              roll: deltaPose.roll
             }
-          };
-          await writeRepairMeta(path.join(failedOutputDir, "repair_meta.json"), failureMeta);
-        } catch {
-          // ignore meta write errors on failure path
-        }
+          },
+          output: undefined,
+          error: {
+            code: isTimeout ? "FAL_TIMEOUT" : "FAL_ERROR",
+            message: error instanceof Error ? error.message : "Unknown error",
+            retryable: isTimeout
+          }
+        };
+        putRepair(sessionId, sessionBucket, repairId, { meta: failureMeta });
       }
 
       return res.status(500).json({ error: "REPAIR_FAILED", detail: error instanceof Error ? error.message : "Unknown error" });
