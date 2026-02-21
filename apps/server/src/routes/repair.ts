@@ -7,6 +7,7 @@ import { deltaPoseSchema } from "../../../../shared/schemas/delta-pose";
 import { cameraSchema } from "../../../../shared/schemas/camera";
 import { repairMetaSchema, type RepairMeta } from "../../../../shared/schemas/repair-meta";
 import { config } from "../lib/config";
+import { getFalKey } from "../lib/app-settings";
 import { parseSessionBucket, parseSessionId, resolveWithin, sessionBaseRelativePath } from "../lib/paths";
 import { writeRepairMeta } from "../lib/repair-meta";
 
@@ -32,11 +33,6 @@ function repairInputPaths(sessionRel: string, repairId: string) {
     camera_path: `${sessionRel}/repairs/${repairId}/input/camera.json`
   };
 }
-
-fal.config({
-  credentials: process.env.FAL_KEY
-});
-
 
 repairRouter.get("/api/repairs/list", async (req, res) => {
   try {
@@ -95,6 +91,12 @@ repairRouter.post(
     let withNotes: string | undefined;
 
     try {
+      const falKey = await getFalKey();
+      if (!falKey) {
+        return res.status(400).json({ error: "FAL_KEY_NOT_CONFIGURED" });
+      }
+      fal.config({ credentials: falKey });
+
       if (req.body.paid_confirm !== "true") {
         return res.status(400).json({ error: "PAID_CONFIRM_REQUIRED" });
       }

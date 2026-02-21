@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { config, validateMlSharpRuntimeOrThrow } from "./lib/config";
 import { generateRouter } from "./routes/generate";
 import { repairRouter } from "./routes/repair";
+import { settingsRouter } from "./routes/settings";
 import { resolveWithin } from "./lib/paths";
 
 export function createApp() {
@@ -31,10 +32,12 @@ export function createApp() {
 
   app.use(generateRouter);
   app.use(repairRouter);
+  app.use(settingsRouter);
 
   app.use("/shots", express.static(config.shotsRoot));
   app.use("/viewer", express.static(path.join(config.repoRoot, "apps/viewer")));
   app.use("/repair", express.static(path.join(config.repoRoot, "apps/repair")));
+  app.use("/settings", express.static(path.join(config.repoRoot, "apps/settings")));
 
   return app;
 }

@@ -43,6 +43,7 @@ Thumbs.db
 # Environment / secrets
 .env
 .env.local
+settings.json
 
 # Large media files
 *.mp4
