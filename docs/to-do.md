@@ -2,11 +2,12 @@
 
 ## P1
 - add progress bar for generations
-- add tilt controls to shot camera. Need to be able to rotate it on the axis that is perpendicular to the view
 - additional prompt field needs to be taller, about 5 lines.
+- why dispaly a session id (eg SESSION_20260220_135609)? Instead we should display the root of the folder. 
 
 
 ## P2 (Important)
+- add tilt controls to shot camera. Need to be able to rotate it on the axis that is perpendicular to the view
 - add fal key to UI settings so that ic an be changed by the user. 
 - Add error-path tests for `/api/repair` (invalid input, fal failure, timeout, invalid session id)
 - Add generation tests for completed-job reuse behavior when manifest already 

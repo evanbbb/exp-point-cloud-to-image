@@ -328,6 +328,23 @@ i.ph { font-size: 16px; line-height: 1; }
 .job-status--completed { color: #22C55E; }
 .job-status--failed   { color: #EF4444; }
 
+.job-progress-wrap {
+  width: 80px;
+  height: 6px;
+  background: var(--color-input-bg);
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.job-progress-bar {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 3px;
+  transition: width 300ms ease;
+}
+
 .job-loaded-tag {
   font-size: 10px;
   font-weight: 600;

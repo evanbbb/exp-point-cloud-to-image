@@ -41,9 +41,10 @@ export function createGenerationController({
       return;
     }
 
-    const filtered = sessionData.jobs.filter(j =>
-      sourceIdFromManifestPath(j.scene_manifest_path) === activeSource
-    );
+    const filtered = sessionData.jobs.filter(j => {
+      const jobSource = sourceIdFromManifestPath(j.scene_manifest_path) || j.source_id;
+      return jobSource === activeSource || !jobSource;
+    });
 
     if (!filtered.length) {
       el.innerHTML = '<span class="typography-caption">No generation jobs for this source.</span>';
@@ -54,7 +55,12 @@ export function createGenerationController({
       `<div class="job-row${loadedId === j.job_id ? ' is-loaded' : ''}">
         <span>${j.job_id}</span>
         <span class="job-status job-status--${j.status}">${j.status}</span>
-        <span class="typography-caption">${typeof j.progress_percent === 'number' ? `${j.progress_percent}%` : ''}</span>
+        ${typeof j.progress_percent === 'number'
+          ? `<span class="job-progress-wrap">
+               <span class="job-progress-bar" style="width:${j.progress_percent}%"></span>
+             </span>
+             <span class="typography-caption">${j.progress_percent}%</span>`
+          : ''}
         <span class="typography-caption">${j.stage || ''}</span>
         <span class="typography-caption">${j.started_at ? new Date(j.started_at).toLocaleTimeString() : ''}</span>
         ${loadedId === j.job_id ? '<span class="job-loaded-tag">Loaded</span>' : ''}

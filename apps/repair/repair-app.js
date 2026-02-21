@@ -486,7 +486,7 @@ async function pickFolder() {
 }
 
 function activateSession() {
-  document.getElementById('sessionDisplay').textContent = sessionData.session_id;
+  document.getElementById('sessionDisplay').textContent = sessionData.session_bucket || sessionData.session_id;
   renderSourceSelect();
   // Auto-select first source if only one
   if (sessionData.sources?.length === 1) {

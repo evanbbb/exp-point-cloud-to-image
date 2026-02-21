@@ -207,7 +207,7 @@ async function initializeSession() {
 }
 
 function activateSession(message) {
-  document.getElementById('sessionDisplay').textContent = sessionData.session_id;
+  document.getElementById('sessionDisplay').textContent = sessionData.session_bucket || sessionData.session_id;
   const imageToggle = document.getElementById('toggleImage');
   if (imageToggle) imageToggle.checked = true;
   renderSourceSelect();
@@ -461,6 +461,7 @@ document.getElementById('start').onclick = async () => {
     if (data.job_id) {
       const job = upsertLocalJob({
         job_id: data.job_id,
+        source_id: sessionData.active_source || null,
         status: data.status || 'pending',
         stage: data.stage || 'queued',
         progress_percent: typeof data.progress_percent === 'number' ? data.progress_percent : 0,
