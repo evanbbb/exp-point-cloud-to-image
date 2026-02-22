@@ -6,6 +6,7 @@ Current integration for `POST /api/repair`.
 
 - Model: `fal-ai/flux-2/klein/9b/base/edit/lora`
 - LoRA: `cyrildiagne/flux2-klein9b-lora-mlsharp-3d-repair`
+- LoRA reference: https://huggingface.co/cyrildiagne/flux2-klein9b-lora-mlsharp-3d-repair
 - Source of truth: `apps/server/src/lib/config.ts`
 
 ## Server-side Flow

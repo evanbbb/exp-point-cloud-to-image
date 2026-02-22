@@ -64,3 +64,8 @@ Retention/eviction behavior:
 - Localhost development tool, no auth layer.
 - Intended for single-user local operation.
 - FAL API key is stored server-side only and never exposed directly from server config in browser code.
+
+## Platform assumptions
+
+- Current validated baseline: macOS Intel (non-Apple Silicon).
+- For Apple Silicon and Windows override guidance (`ML_SHARP_BIN`, `ML_SHARP_DEVICE`), see `docs/structure/platform-support.md`.

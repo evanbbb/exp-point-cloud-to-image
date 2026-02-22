@@ -2,6 +2,8 @@
 
 Current backend contract for on-demand `ml-sharp` generation.
 
+Upstream project: https://github.com/apple/ml-sharp
+
 ## Purpose
 
 - Accept a browser-uploaded reference image.
