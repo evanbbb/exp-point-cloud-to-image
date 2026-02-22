@@ -376,6 +376,160 @@ function getRunCount() {
   return Number(document.getElementById('runCount')?.value ?? 1);
 }
 
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let j = 0; j < 8; j += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function encodeDosDateTime(inputDate) {
+  const d = inputDate instanceof Date ? inputDate : new Date(inputDate || Date.now());
+  const year = Math.max(d.getFullYear(), 1980);
+  const dosDate = ((year - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2);
+  return { dosDate: dosDate & 0xffff, dosTime: dosTime & 0xffff };
+}
+
+function concatUint8Arrays(chunks) {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+function buildZipBlob(files) {
+  const encoder = new TextEncoder();
+  const localChunks = [];
+  const centralChunks = [];
+  let localOffset = 0;
+
+  for (const file of files) {
+    const nameBytes = encoder.encode(file.name);
+    const data = file.bytes;
+    const checksum = crc32(data);
+    const { dosDate, dosTime } = encodeDosDateTime(file.modifiedAt);
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(localHeader.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, dosTime, true);
+    localView.setUint16(12, dosDate, true);
+    localView.setUint32(14, checksum, true);
+    localView.setUint32(18, data.length, true);
+    localView.setUint32(22, data.length, true);
+    localView.setUint16(26, nameBytes.length, true);
+    localView.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+
+    localChunks.push(localHeader, data);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(centralHeader.buffer);
+    centralView.setUint32(0, 0x02014b50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(12, dosTime, true);
+    centralView.setUint16(14, dosDate, true);
+    centralView.setUint32(16, checksum, true);
+    centralView.setUint32(20, data.length, true);
+    centralView.setUint32(24, data.length, true);
+    centralView.setUint16(28, nameBytes.length, true);
+    centralView.setUint16(30, 0, true);
+    centralView.setUint16(32, 0, true);
+    centralView.setUint16(34, 0, true);
+    centralView.setUint16(36, 0, true);
+    centralView.setUint32(38, 0, true);
+    centralView.setUint32(42, localOffset, true);
+    centralHeader.set(nameBytes, 46);
+    centralChunks.push(centralHeader);
+
+    localOffset += localHeader.length + data.length;
+  }
+
+  const centralOffset = localOffset;
+  const centralSize = centralChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+
+  const endOfCentralDirectory = new Uint8Array(22);
+  const eocdView = new DataView(endOfCentralDirectory.buffer);
+  eocdView.setUint32(0, 0x06054b50, true);
+  eocdView.setUint16(4, 0, true);
+  eocdView.setUint16(6, 0, true);
+  eocdView.setUint16(8, files.length, true);
+  eocdView.setUint16(10, files.length, true);
+  eocdView.setUint32(12, centralSize, true);
+  eocdView.setUint32(16, centralOffset, true);
+  eocdView.setUint16(20, 0, true);
+
+  return new Blob(
+    [concatUint8Arrays([...localChunks, ...centralChunks, endOfCentralDirectory])],
+    { type: 'application/zip' }
+  );
+}
+
+async function downloadRepairZip(entry) {
+  const repairId = entry?.meta?.repair_id || 'repair';
+  const dirHandle = entry?.repairDirHandle;
+  if (!dirHandle) throw new Error('Repair folder handle unavailable.');
+
+  const metaHandle = await dirHandle.getFileHandle(REPAIR_META_FILE);
+  const metaFile = await metaHandle.getFile();
+  const files = [{
+    name: REPAIR_META_FILE,
+    bytes: new Uint8Array(await metaFile.arrayBuffer()),
+    modifiedAt: new Date(metaFile.lastModified || Date.now())
+  }];
+
+  try {
+    const imageHandle = await dirHandle.getFileHandle(REPAIRED_IMAGE_FILE);
+    const imageFile = await imageHandle.getFile();
+    files.push({
+      name: REPAIRED_IMAGE_FILE,
+      bytes: new Uint8Array(await imageFile.arrayBuffer()),
+      modifiedAt: new Date(imageFile.lastModified || Date.now())
+    });
+  } catch {
+    // Failed repairs may not have an image.
+  }
+
+  const zipBlob = buildZipBlob(files);
+  triggerDownload(zipBlob, `${repairId}_files.zip`);
+  return files.map(file => file.name);
+}
+
 async function fetchServerRepairMeta(repairId) {
   const bucketParam = sessionData.session_bucket
     ? `&session_bucket=${encodeURIComponent(sessionData.session_bucket)}`
@@ -478,7 +632,7 @@ async function listLocalRepairsForCapture(capId, capPose) {
             imgUrl = null;
           }
         }
-        repairEntries.push({ meta, imgUrl });
+        repairEntries.push({ meta, imgUrl, repairDirHandle: handle });
       } catch {
         // ignore malformed repair folders
       }
@@ -527,7 +681,8 @@ async function updatePreviousRepairs() {
       return;
     }
     grid.innerHTML = '';
-    for (const { meta, imgUrl } of repairs) {
+    for (const entry of repairs) {
+      const { meta, imgUrl } = entry;
       const card = document.createElement('div');
       card.className = 'capture-card';
       const dt = new Date(meta.created_at);
@@ -548,6 +703,21 @@ async function updatePreviousRepairs() {
         card.querySelector('img').onclick = (e) => { e.stopPropagation(); openLightbox(imgUrl); };
       }
       const actionsEl = card.querySelector('.repair-card-actions');
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'icon-btn compare-trigger';
+      saveBtn.title = 'Save repair files (.zip)';
+      saveBtn.innerHTML = '<i class="ph ph-download-simple"></i>';
+      saveBtn.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+          const files = await downloadRepairZip(entry);
+          log({ message: `Saved zip for ${meta.repair_id}`, files, archive: `${meta.repair_id}_files.zip` });
+        } catch (err) {
+          log({ error: `Failed to save repair zip: ${err}` });
+        }
+      };
+      actionsEl.appendChild(saveBtn);
+
       if (imgUrl && cap) {
         const compareBtn = document.createElement('button');
         compareBtn.className = 'icon-btn compare-trigger';

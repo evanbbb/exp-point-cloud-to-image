@@ -4,6 +4,7 @@
 - add progress bar for generations
 - additional prompt field needs to be taller, about 5 lines.
 - why dispaly a session id (eg SESSION_20260220_135609)? Instead we should display the root of the folder. 
+- add a normalization button that can be activated after generation completes.
 
 
 ## P2 (Important)
