@@ -24,7 +24,11 @@ Part A workflow: source image selection, 3D generation, shot framing, and captur
 - Manage sources (`src_####`) and active source selection.
 - Upload reference via `/api/generate/sync-reference`.
 - Start generation via `/api/generate`.
-- Poll `/api/generate/:jobId` and load output assets from `/api/generate/:jobId/asset/...`.
+- Poll `/api/generate/:jobId`.
+- Persist completed generation assets to local working folder:
+  - `source/src_####/generations/gen_<jobId>/scene_manifest.json`
+  - `source/src_####/generations/gen_<jobId>/scene.ply`
+- Load generated scenes from local files when available.
 - Render image plane overlay and aspect guide for active source.
 - Capture camera outputs to local working folder:
   - `target.png`
@@ -40,5 +44,5 @@ Part A workflow: source image selection, 3D generation, shot framing, and captur
 
 ## Data boundaries
 
-- Local persistent data: session/source/capture files in selected working folder.
-- Server-dependent transient data: generation job state and generated scene assets.
+- Local persistent data: session/source/capture/generation files in selected working folder.
+- Server-dependent transient data: generation job state and in-memory generation assets used only until local copy is written.

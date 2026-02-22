@@ -23,6 +23,7 @@ Single local Express server (default `http://localhost:8787`).
 - `POST /api/generate/:jobId/cancel`
 - `GET /api/generate/:jobId/asset/:assetName`
 - `GET /api/repairs/list`
+- `GET /api/repairs/:repairId/meta`
 - `GET /api/repairs/:repairId/image`
 - `POST /api/repair`
 
@@ -36,6 +37,9 @@ Single local Express server (default `http://localhost:8787`).
 Persistence behavior:
 
 - Persisted: `settings.json` (repo root).
+- Persisted by browser in selected working folder (not by server):
+  - generation artifacts (`source/src_####/generations/...`)
+  - repair artifacts (`source/src_####/repairs/...`)
 - In-memory only:
   - generation jobs/status
   - generation manifest/PLY assets

@@ -37,8 +37,35 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function redactPathToken(rawPath: string): string {
+  const normalized = String(rawPath || "").replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  const tail = parts[parts.length - 1] || "";
+  return tail ? `<path:${tail}>` : "<path>";
+}
+
+function scrubSensitivePaths(text: string): string {
+  const input = String(text ?? "");
+  let sanitized = input.replace(
+    /[A-Za-z]:\\(?:[^\\\s"'`<>|]+\\)*[^\\\s"'`<>|]+/g,
+    (match) => redactPathToken(match)
+  );
+  sanitized = sanitized.replace(
+    /\/(?:[^\/\s"'`<>]+\/)+[^\/\s"'`<>]+/g,
+    (match, offset, source) => {
+      const idx = Number(offset) || 0;
+      const prefix = String(source).slice(Math.max(0, idx - 8), idx).toLowerCase();
+      if (prefix.endsWith("http://") || prefix.endsWith("https://")) {
+        return match;
+      }
+      return redactPathToken(match);
+    }
+  );
+  return sanitized;
+}
+
 function appendLogTail(existing: string[] | undefined, line: string): string[] {
-  const next = [...(existing ?? []), line];
+  const next = [...(existing ?? []), scrubSensitivePaths(line)];
   if (next.length > MAX_LOG_TAIL) {
     next.splice(0, next.length - MAX_LOG_TAIL);
   }
@@ -209,7 +236,7 @@ function runMlSharp(
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`ml-sharp exited with code ${code}: ${stderr.slice(-500)}`));
+        reject(new Error(scrubSensitivePaths(`ml-sharp exited with code ${code}: ${stderr.slice(-500)}`)));
       }
     });
 
@@ -355,7 +382,9 @@ export async function startGeneration(input: unknown): Promise<{
         updated_at: nowIso(),
         error: {
           code: isCancelled ? "JOB_CANCELLED" : isTimeout ? "ML_SHARP_TIMEOUT" : "ML_SHARP_EXEC_FAILED",
-          message: isCancelled ? "Generation cancelled by user." : error instanceof Error ? error.message : "Unknown error"
+          message: isCancelled
+            ? "Generation cancelled by user."
+            : scrubSensitivePaths(error instanceof Error ? error.message : "Unknown error")
         }
       };
       await persistJob();

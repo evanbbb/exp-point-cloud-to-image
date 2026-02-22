@@ -101,10 +101,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     return -1;
   }
 
-  async function loadMlSharpGeometry(plyUrl) {
-    const response = await fetch(plyUrl);
-    if (!response.ok) throw new Error(`Failed to load PLY (${response.status})`);
-    const buffer = await response.arrayBuffer();
+  function loadMlSharpGeometryFromArrayBuffer(buffer) {
     const bytes = new Uint8Array(buffer);
     const headerEnd = findHeaderEndIndex(bytes);
     if (headerEnd < 0) return null;
@@ -495,22 +492,18 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     return true;
   }
 
-  async function loadGeneratedSceneFromJob(job) {
-    if (!scene || !job?.scene_manifest_path || loadedGeneratedJobId === job.job_id) return;
-
-    const manifestRes = await fetch(toAssetUrl(job.scene_manifest_path));
-    if (!manifestRes.ok) {
-      throw new Error(`Failed to load scene manifest (${manifestRes.status})`);
+  async function loadGeneratedSceneFromPayload({ jobId, manifest, plyArrayBuffer }) {
+    if (!scene || !jobId || loadedGeneratedJobId === jobId) return;
+    if (!(plyArrayBuffer instanceof ArrayBuffer) || plyArrayBuffer.byteLength === 0) {
+      throw new Error('Generated scene payload is missing PLY bytes.');
     }
-    const manifest = await manifestRes.json();
-    if (!manifest?.ply_path) {
-      throw new Error('Scene manifest missing ply_path.');
+    if (!manifest || typeof manifest !== 'object') {
+      throw new Error('Generated scene payload is missing manifest JSON.');
     }
 
-    const plyUrl = toAssetUrl(manifest.ply_path);
-    let geometry = await loadMlSharpGeometry(plyUrl);
+    let geometry = loadMlSharpGeometryFromArrayBuffer(plyArrayBuffer);
     if (!geometry) {
-      geometry = await plyLoader.loadAsync(plyUrl);
+      geometry = plyLoader.parse(plyArrayBuffer);
       ensureVertexColors(geometry);
     }
     normalizeGeneratedGeometry(geometry);
@@ -531,12 +524,16 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     }
     generatedSceneObject = points;
     scene.add(generatedSceneObject);
-    loadedGeneratedJobId = job.job_id;
+    loadedGeneratedJobId = jobId;
 
     const box = new THREE.Box3().setFromObject(generatedSceneObject);
     const center = box.getCenter(new THREE.Vector3());
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     if (Number.isFinite(sphere.radius) && sphere.radius > 0) {
+      // Scale clip planes with scene size to avoid clipping large generated clouds.
+      orbitCamera.near = Math.max(0.01, sphere.radius * 0.001);
+      orbitCamera.far = Math.max(2000, sphere.radius * 50);
+      orbitCamera.updateProjectionMatrix();
       orbitCamera.position.set(
         center.x + sphere.radius * 2.2,
         center.y + sphere.radius * 1.2,
@@ -549,8 +546,8 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
       fitShotCameraToGeneratedScene({ resetDelta: true });
 
       // Extend shot camera clip planes to fit the scene
-      shotCamera.near = sphere.radius * 0.01;
-      shotCamera.far = sphere.radius * 20;
+      shotCamera.near = Math.max(0.01, sphere.radius * 0.001);
+      shotCamera.far = Math.max(2000, sphere.radius * 50);
       shotCamera.updateProjectionMatrix();
 
       // Reposition helpers to match scene scale and prevent Z-fighting
@@ -563,6 +560,30 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
         axesHelper.scale.setScalar(sphere.radius * 0.4);
       }
     }
+  }
+
+  async function loadGeneratedSceneFromJob(job) {
+    if (!scene || !job?.scene_manifest_path || loadedGeneratedJobId === job.job_id) return;
+    const manifestRes = await fetch(toAssetUrl(job.scene_manifest_path));
+    if (!manifestRes.ok) {
+      throw new Error(`Failed to load scene manifest (${manifestRes.status})`);
+    }
+    const manifest = await manifestRes.json();
+    if (!manifest?.ply_path) {
+      throw new Error('Scene manifest missing ply_path.');
+    }
+
+    const plyUrl = toAssetUrl(manifest.ply_path);
+    const plyRes = await fetch(plyUrl);
+    if (!plyRes.ok) {
+      throw new Error(`Failed to load generated PLY (${plyRes.status})`);
+    }
+    const plyArrayBuffer = await plyRes.arrayBuffer();
+    await loadGeneratedSceneFromPayload({
+      jobId: job.job_id,
+      manifest,
+      plyArrayBuffer
+    });
   }
 
   function clearGeneratedScene() {
@@ -715,6 +736,7 @@ export function createSceneController({ lensFov, log, isCompletedStatus }) {
     setImagePlane,
     setImagePlaneVisible,
     loadGeneratedSceneFromJob,
+    loadGeneratedSceneFromPayload,
     fitShotCameraToGeneratedScene,
     updateShotCamera,
     setControlsCamera,

@@ -6,6 +6,8 @@ import {
 
 const SESSION_FILE = 'istanbul3d_session.json';
 const WORKSPACE_SETUP_URL = '/workspace?next=/repair';
+const REPAIR_META_FILE = 'repair_meta.json';
+const REPAIRED_IMAGE_FILE = 'repaired.png';
 
 let sessionDirHandle = null;
 let sessionData = null;
@@ -15,6 +17,7 @@ let sourceThumbUrl = null;
 let selectedCapId = null;
 let isRunning = false;
 let prevRepairsGeneration = 0;
+let previousRepairUrls = [];
 
 // ── Lightbox ────────────────────────────────────────────────
 
@@ -66,6 +69,140 @@ async function readSessionFile(dirHandle) {
   } catch {
     return null;
   }
+}
+
+async function writeTextFile(dirHandle, name, content) {
+  const fh = await dirHandle.getFileHandle(name, { create: true });
+  const writable = await fh.createWritable();
+  await writable.write(content);
+  await writable.close();
+}
+
+async function writeBlobFile(dirHandle, name, blob) {
+  const fh = await dirHandle.getFileHandle(name, { create: true });
+  const writable = await fh.createWritable();
+  await writable.write(blob);
+  await writable.close();
+}
+
+async function readJsonFile(fileHandle) {
+  const file = await fileHandle.getFile();
+  return JSON.parse(await file.text());
+}
+
+function clearPreviousRepairUrls() {
+  for (const url of previousRepairUrls) {
+    try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+  }
+  previousRepairUrls = [];
+}
+
+function makeRepairId() {
+  const stamp = Date.now();
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return `repair_${stamp}_${suffix}`;
+}
+
+async function readImageDimsFromBlob(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const dims = { width: img.naturalWidth, height: img.naturalHeight };
+      URL.revokeObjectURL(url);
+      resolve(dims);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: 0, height: 0 });
+    };
+    img.src = url;
+  });
+}
+
+function buildLocalRepairMeta({
+  repairId,
+  sourceId,
+  sourceFilename,
+  capId,
+  promptText,
+  pose,
+  startedAt,
+  completedAt,
+  durationMs,
+  status,
+  imageBlob,
+  imageDims,
+  errorMessage,
+  serverMeta
+}) {
+  const input = {
+    reference_image_path: `source/${sourceId}/${sourceFilename}`,
+    target_image_path: `source/${sourceId}/captures/${capId}/target.png`,
+    delta_pose_path: `source/${sourceId}/captures/${capId}/delta_pose.json`,
+    camera_path: `source/${sourceId}/captures/${capId}/camera.json`
+  };
+  const fallbackFal = {
+    model: 'unknown',
+    loras: [],
+    parameters: {
+      num_inference_steps: 28,
+      guidance_scale: 5,
+      output_format: 'png',
+      num_images: 1,
+      seed: null
+    }
+  };
+
+  const base = {
+    schema_version: '1.0',
+    repair_id: repairId,
+    session_id: sessionData.session_id,
+    source_id: sourceId,
+    cap_id: capId,
+    created_at: startedAt,
+    completed_at: completedAt,
+    duration_ms: durationMs,
+    status,
+    input,
+    fal: serverMeta?.fal || fallbackFal,
+    prompt: {
+      template_version: '1.0',
+      text: promptText,
+      delta_pose_values: {
+        x: pose.x,
+        y: pose.y,
+        z: pose.z,
+        pitch: pose.pitch,
+        yaw: pose.yaw,
+        roll: pose.roll
+      }
+    }
+  };
+
+  if (status === 'succeeded') {
+    const dims = imageDims || { width: 0, height: 0 };
+    return {
+      ...base,
+      output: {
+        repaired_image_path: `source/${sourceId}/repairs/${repairId}/${REPAIRED_IMAGE_FILE}`,
+        width: dims.width || 1,
+        height: dims.height || 1,
+        bytes: imageBlob?.size || 1
+      },
+      error: null
+    };
+  }
+
+  return {
+    ...base,
+    output: undefined,
+    error: serverMeta?.error || {
+      code: 'REPAIR_FAILED',
+      message: String(errorMessage || 'Repair failed'),
+      retryable: false
+    }
+  };
 }
 
 // ── Source dropdown ──────────────────────────────────────────
@@ -122,6 +259,7 @@ async function loadSourceThumbnail(sourceId) {
 async function enumerateCaptures(sourceId) {
   captures = [];
   selectedCapId = null;
+  clearPreviousRepairUrls();
   document.getElementById('promptPreview').style.display = 'none';
   document.getElementById('previousRepairs').style.display = 'none';
   if (!sourceId || !sessionDirHandle) {
@@ -131,7 +269,9 @@ async function enumerateCaptures(sourceId) {
   try {
     const sourceDir = await sessionDirHandle.getDirectoryHandle('source');
     const srcDir = await sourceDir.getDirectoryHandle(sourceId);
-    const capturesDir = await srcDir.getDirectoryHandle('captures');
+    await srcDir.getDirectoryHandle('generations', { create: true });
+    await srcDir.getDirectoryHandle('repairs', { create: true });
+    const capturesDir = await srcDir.getDirectoryHandle('captures', { create: true });
     const capEntries = [];
     for await (const [name, handle] of capturesDir.entries()) {
       if (handle.kind === 'directory' && /^cap_\d{4}$/.test(name)) {
@@ -236,10 +376,133 @@ function getRunCount() {
   return Number(document.getElementById('runCount')?.value ?? 1);
 }
 
+async function fetchServerRepairMeta(repairId) {
+  const bucketParam = sessionData.session_bucket
+    ? `&session_bucket=${encodeURIComponent(sessionData.session_bucket)}`
+    : '';
+  const res = await fetch(`/api/repairs/${encodeURIComponent(repairId)}/meta?session_id=${encodeURIComponent(sessionData.session_id)}${bucketParam}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function persistRepairToWorkspace({
+  repairId,
+  source,
+  cap,
+  promptText,
+  pose,
+  startedAt,
+  completedAt,
+  durationMs,
+  status,
+  imageBlob,
+  errorMessage
+}) {
+  if (!sessionDirHandle || !activeSourceId) return null;
+  const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
+  const srcDir = await sourceDir.getDirectoryHandle(activeSourceId, { create: true });
+  const repairsDir = await srcDir.getDirectoryHandle('repairs', { create: true });
+  const repairDir = await repairsDir.getDirectoryHandle(repairId, { create: true });
+
+  let imageDims = null;
+  if (imageBlob) {
+    imageDims = await readImageDimsFromBlob(imageBlob);
+    await writeBlobFile(repairDir, REPAIRED_IMAGE_FILE, imageBlob);
+  }
+
+  let serverMeta = null;
+  try {
+    serverMeta = await fetchServerRepairMeta(repairId);
+  } catch {
+    // ignore server meta fetch failures; local fallback meta will be written.
+  }
+
+  const localMeta = buildLocalRepairMeta({
+    repairId,
+    sourceId: activeSourceId,
+    sourceFilename: source.filename,
+    capId: cap.capId,
+    promptText,
+    pose,
+    startedAt,
+    completedAt,
+    durationMs,
+    status,
+    imageBlob,
+    imageDims,
+    errorMessage,
+    serverMeta
+  });
+  await writeTextFile(repairDir, REPAIR_META_FILE, JSON.stringify(localMeta, null, 2));
+  return localMeta;
+}
+
+async function listLocalRepairsForCapture(capId, capPose) {
+  if (!sessionDirHandle || !activeSourceId) return [];
+  try {
+    const sourceDir = await sessionDirHandle.getDirectoryHandle('source');
+    const srcDir = await sourceDir.getDirectoryHandle(activeSourceId);
+    const repairsDir = await srcDir.getDirectoryHandle('repairs');
+
+    const repairEntries = [];
+    for await (const [name, handle] of repairsDir.entries()) {
+      if (handle.kind !== 'directory' || !/^repair_/.test(name)) continue;
+      try {
+        const metaHandle = await handle.getFileHandle(REPAIR_META_FILE);
+        const meta = await readJsonFile(metaHandle);
+        const sourceMatches = !meta.source_id || meta.source_id === activeSourceId;
+        if (!sourceMatches) continue;
+
+        let captureMatches = false;
+        if (meta.cap_id) {
+          captureMatches = meta.cap_id === capId;
+        } else if (capPose && meta.prompt?.delta_pose_values) {
+          const p = meta.prompt.delta_pose_values;
+          captureMatches = p.x === capPose.x
+            && p.y === capPose.y
+            && p.z === capPose.z
+            && p.pitch === capPose.pitch
+            && p.yaw === capPose.yaw
+            && p.roll === capPose.roll;
+        }
+        if (!captureMatches) continue;
+
+        let imgUrl = null;
+        if (meta.status === 'succeeded') {
+          try {
+            const imgHandle = await handle.getFileHandle(REPAIRED_IMAGE_FILE);
+            const imgFile = await imgHandle.getFile();
+            imgUrl = URL.createObjectURL(imgFile);
+            previousRepairUrls.push(imgUrl);
+          } catch {
+            imgUrl = null;
+          }
+        }
+        repairEntries.push({ meta, imgUrl });
+      } catch {
+        // ignore malformed repair folders
+      }
+    }
+
+    repairEntries.sort((a, b) => {
+      const aTime = Date.parse(a.meta.created_at || '');
+      const bTime = Date.parse(b.meta.created_at || '');
+      return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    });
+    return repairEntries;
+  } catch {
+    return [];
+  }
+}
+
 async function updatePreviousRepairs() {
   const gen = ++prevRepairsGeneration;
   const panel = document.getElementById('previousRepairs');
-  if (!selectedCapId) { panel.style.display = 'none'; return; }
+  clearPreviousRepairUrls();
+  if (!selectedCapId) {
+    panel.style.display = 'none';
+    return;
+  }
   const capId = selectedCapId;
   const cap = captures.find(c => c.capId === capId);
   document.getElementById('prevRepairsCapId').textContent = capId;
@@ -247,48 +510,34 @@ async function updatePreviousRepairs() {
   const grid = document.getElementById('prevRepairsGrid');
   grid.innerHTML = '<div class="captures-empty">Loading...</div>';
   try {
-    // Read this capture's delta pose for legacy matching (repairs before cap_id was stored)
     let capPose = null;
     if (cap) {
-      try { capPose = JSON.parse(await cap.deltaPoseFile.text()); } catch { /* ignore */ }
+      try {
+        capPose = JSON.parse(await cap.deltaPoseFile.text());
+      } catch {
+        // ignore missing legacy pose
+      }
     }
     if (gen !== prevRepairsGeneration) return;
-
-    const bucketParam = sessionData.session_bucket
-      ? `&session_bucket=${encodeURIComponent(sessionData.session_bucket)}`
-      : '';
-    const res = await fetch(`/api/repairs/list?session_id=${encodeURIComponent(sessionData.session_id)}${bucketParam}`);
-    const data = await res.json();
+    const repairs = await listLocalRepairsForCapture(capId, capPose);
     if (gen !== prevRepairsGeneration) return;
-    const allRepairs = data.repairs ?? [];
 
-    const repairs = allRepairs.filter(r => {
-      if (activeSourceId && r.source_id !== activeSourceId) return false;
-      if (r.cap_id) return r.cap_id === capId;
-      // Legacy: no cap_id — match by delta_pose_values
-      if (!capPose || !r.prompt?.delta_pose_values) return false;
-      const p = r.prompt.delta_pose_values;
-      return p.x === capPose.x && p.y === capPose.y && p.z === capPose.z
-          && p.pitch === capPose.pitch && p.yaw === capPose.yaw && p.roll === capPose.roll;
-    });
-
-    if (repairs.length === 0) {
+    if (!repairs.length) {
       grid.innerHTML = '<div class="captures-empty">No previous repairs for this capture.</div>';
       return;
     }
     grid.innerHTML = '';
-    for (const repair of repairs) {
+    for (const { meta, imgUrl } of repairs) {
       const card = document.createElement('div');
       card.className = 'capture-card';
-      const imgUrl = repair.output?.repaired_image_path || null;
-      const dt = new Date(repair.created_at);
+      const dt = new Date(meta.created_at);
       const dateStr = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
         + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-      const failedLabel = repair.status === 'failed'
+      const failedLabel = meta.status === 'failed'
         ? `<span class="result-status result-status--failed" style="font-size:9px;text-transform:uppercase;">Failed</span>`
         : '';
       card.innerHTML = `
-        <img src="${imgUrl ?? ''}" alt="${repair.repair_id}"
+        <img src="${imgUrl ?? ''}" alt="${meta.repair_id}"
           style="cursor:${imgUrl ? 'zoom-in' : 'default'};${!imgUrl ? 'opacity:0.3;' : ''}" />
         <div class="capture-card-label" style="flex-direction:column;align-items:flex-start;gap:3px;">
           <span style="font-size:10px;">${dateStr}${failedLabel ? ' ' : ''}${failedLabel}</span>
@@ -377,7 +626,7 @@ async function runRepairs() {
   const runs = getRunCount();
 
   for (let i = 0; i < runs; i++) {
-    const repairId = `repair_${Date.now()}`;
+    const repairId = makeRepairId();
 
     // Add result card as running
     const card = document.createElement('div');
@@ -395,14 +644,17 @@ async function runRepairs() {
     `;
     list.prepend(card);
 
+    let pose = null;
+    let prompt = '';
+    const startedAt = new Date().toISOString();
     try {
       const cameraText = await cap.cameraFile.text();
       const deltaPoseText = await cap.deltaPoseFile.text();
 
-      const pose = JSON.parse(deltaPoseText);
+      pose = JSON.parse(deltaPoseText);
       const fmt = v => (typeof v === 'number' ? parseFloat(v.toFixed(4)) : v);
       const poseStr = JSON.stringify({ x: fmt(pose.x), y: fmt(pose.y), z: fmt(pose.z), pitch: fmt(pose.pitch), yaw: fmt(pose.yaw), roll: fmt(pose.roll) });
-      let prompt = `Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: ${poseStr}`;
+      prompt = `Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: ${poseStr}`;
       if (notes) prompt += `\n\n${notes}`;
 
       const fd = new FormData();
@@ -429,7 +681,22 @@ async function runRepairs() {
         throw new Error(detail);
       }
 
-      await res.blob(); // consume body
+      const repairedBlob = await res.blob();
+      const completedAt = new Date().toISOString();
+      const durationMs = Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
+      await persistRepairToWorkspace({
+        repairId,
+        source,
+        cap,
+        promptText: prompt,
+        pose,
+        startedAt,
+        completedAt,
+        durationMs,
+        status: 'succeeded',
+        imageBlob: repairedBlob,
+        errorMessage: null
+      });
 
       log(`${cap.capId} run ${i + 1} complete.`);
 
@@ -440,6 +707,28 @@ async function runRepairs() {
       }
       await updatePreviousRepairs();
     } catch (err) {
+      const completedAt = new Date().toISOString();
+      const durationMs = Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
+      if (pose && prompt) {
+        try {
+          await persistRepairToWorkspace({
+            repairId,
+            source,
+            cap,
+            promptText: prompt,
+            pose,
+            startedAt,
+            completedAt,
+            durationMs,
+            status: 'failed',
+            imageBlob: null,
+            errorMessage: String(err?.message || err)
+          });
+        } catch {
+          // ignore local failure persistence errors
+        }
+      }
+
       // Update card to failed
       const statusEl = card.querySelector('.result-status');
       statusEl.className = 'result-status result-status--failed';
@@ -450,6 +739,7 @@ async function runRepairs() {
       card.querySelector('.result-info').appendChild(errorEl);
 
       log({ error: `${cap.capId} run ${i + 1} failed: ${err.message || err}` });
+      await updatePreviousRepairs();
     }
   }
 
@@ -538,6 +828,14 @@ document.getElementById('compareOverlay').onclick = (e) => {
   if (e.target === e.currentTarget) closeCompare();
 };
 document.getElementById('compareClose').onclick = closeCompare;
+
+window.addEventListener('beforeunload', () => {
+  clearPreviousRepairUrls();
+  if (sourceThumbUrl) {
+    try { URL.revokeObjectURL(sourceThumbUrl); } catch { /* ignore */ }
+    sourceThumbUrl = null;
+  }
+});
 
 // Start in pick state
 setUIState('pick');

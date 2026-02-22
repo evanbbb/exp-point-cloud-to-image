@@ -74,6 +74,14 @@ function getRepairImage(sessionId: string, sessionBucket: string | null, repairI
   return Buffer.from(entry.imageBuffer);
 }
 
+function getRepairMeta(sessionId: string, sessionBucket: string | null, repairId: string): RepairMeta | null {
+  pruneRepairsStore();
+  const key = makeSessionKey(sessionId, sessionBucket);
+  const entry = repairsBySession.get(key)?.get(repairId);
+  if (!entry?.meta) return null;
+  return { ...entry.meta };
+}
+
 export const repairRouter = Router();
 
 function invalidSessionMessage(error: unknown): string | null {
@@ -99,6 +107,23 @@ repairRouter.get("/api/repairs/list", async (req, res) => {
     const invalidSession = invalidSessionMessage(error);
     if (invalidSession) return res.status(400).json({ error: invalidSession });
     return res.status(500).json({ error: "LIST_REPAIRS_FAILED" });
+  }
+});
+
+repairRouter.get("/api/repairs/:repairId/meta", async (req, res) => {
+  try {
+    const sessionId = parseSessionId(String(req.query.session_id ?? ""));
+    const sessionBucket = parseSessionBucket(String(req.query.session_bucket ?? ""));
+    const repairId = String(req.params.repairId ?? "");
+    const meta = getRepairMeta(sessionId, sessionBucket, repairId);
+    if (!meta) {
+      return res.status(404).json({ error: "REPAIR_META_NOT_FOUND" });
+    }
+    return res.json(meta);
+  } catch (error) {
+    const invalidSession = invalidSessionMessage(error);
+    if (invalidSession) return res.status(400).json({ error: invalidSession });
+    return res.status(500).json({ error: "REPAIR_META_FAILED" });
   }
 });
 

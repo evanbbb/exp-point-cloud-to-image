@@ -7,6 +7,8 @@ import {
 } from '/shared/workspace-handle.js';
 
 const SESSION_FILE = 'istanbul3d_session.json';
+const LOCAL_GEN_MANIFEST = 'scene_manifest.json';
+const LOCAL_GEN_PLY = 'scene.ply';
 const lensFov = { '24mm': 84, '35mm': 63, '50mm': 47, '85mm': 28 };
 const WORKSPACE_SETUP_URL = '/workspace?next=/viewer';
 
@@ -49,7 +51,54 @@ async function readSessionFile(dirHandle) {
   }
 }
 
+function redactPathToken(rawPath) {
+  const normalized = String(rawPath || '').replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  const tail = parts[parts.length - 1] || '';
+  return tail ? `<path:${tail}>` : '<path>';
+}
+
+function scrubSensitivePaths(text) {
+  const input = String(text ?? '');
+  let sanitized = input.replace(
+    /[A-Za-z]:\\(?:[^\\\s"'`<>|]+\\)*[^\\\s"'`<>|]+/g,
+    (match) => redactPathToken(match)
+  );
+  sanitized = sanitized.replace(
+    /\/(?:[^\/\s"'`<>]+\/)+[^\/\s"'`<>]+/g,
+    (match, offset, source) => {
+      const prefix = String(source).slice(Math.max(0, Number(offset) - 8), Number(offset)).toLowerCase();
+      if (prefix.endsWith('http://') || prefix.endsWith('https://')) return match;
+      return redactPathToken(match);
+    }
+  );
+  return sanitized;
+}
+
+function sanitizeSessionDataForPrivacy(data) {
+  if (!data || !Array.isArray(data.jobs)) return false;
+  let changed = false;
+  for (const job of data.jobs) {
+    if (Array.isArray(job.logs_tail)) {
+      const nextLogs = job.logs_tail.map((line) => scrubSensitivePaths(String(line)));
+      if (JSON.stringify(nextLogs) !== JSON.stringify(job.logs_tail)) {
+        job.logs_tail = nextLogs;
+        changed = true;
+      }
+    }
+    if (job?.error && typeof job.error.message === 'string') {
+      const nextMessage = scrubSensitivePaths(job.error.message);
+      if (nextMessage !== job.error.message) {
+        job.error.message = nextMessage;
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
 async function writeSessionFile() {
+  sanitizeSessionDataForPrivacy(sessionData);
   const fh = await sessionDirHandle.getFileHandle(SESSION_FILE, { create: true });
   const writable = await fh.createWritable();
   await writable.write(JSON.stringify(sessionData, null, 2));
@@ -71,6 +120,26 @@ async function nextSourceId(sourceDir) {
     if (m && Number(m[1]) > max) max = Number(m[1]);
   }
   return `src_${String(max + 1).padStart(4, '0')}`;
+}
+
+async function ensureSourceFolderLayout(srcDir) {
+  await srcDir.getDirectoryHandle('captures', { create: true });
+  await srcDir.getDirectoryHandle('generations', { create: true });
+  await srcDir.getDirectoryHandle('repairs', { create: true });
+}
+
+async function ensureAllSourceFolderLayouts() {
+  if (!sessionDirHandle || !sessionData?.sources?.length) return;
+  const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
+  for (const source of sessionData.sources) {
+    if (!source?.id || !/^src_\d{4}$/.test(source.id)) continue;
+    try {
+      const srcDir = await sourceDir.getDirectoryHandle(source.id, { create: true });
+      await ensureSourceFolderLayout(srcDir);
+    } catch {
+      // ignore invalid source folders
+    }
+  }
 }
 
 function renderSourceSelect() {
@@ -116,6 +185,7 @@ async function migrateLegacySession() {
   const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
   const srcId = 'src_0001';
   const srcDir = await sourceDir.getDirectoryHandle(srcId, { create: true });
+  await ensureSourceFolderLayout(srcDir);
   // Move reference file into src_0001/
   try {
     const fh = await sourceDir.getFileHandle(sessionData.reference_filename);
@@ -182,11 +252,12 @@ async function bootstrapFromConnectedFolder() {
     const existing = await readSessionFile(dirHandle);
     if (existing) {
       sessionData = existing;
+      sanitizeSessionDataForPrivacy(sessionData);
       if (!Object.prototype.hasOwnProperty.call(sessionData, 'session_bucket')) {
         sessionData.session_bucket = inferSessionBucketFromDirName(dirHandle.name);
-        await writeSessionFile();
       }
       await migrateLegacySession();
+      await ensureAllSourceFolderLayouts();
       sessionData.active_source = null;
       await writeSessionFile();
       activateSession('Loaded existing session.');
@@ -279,7 +350,11 @@ const generationController = createGenerationController({
     }
     const aspect = await getActiveSourceAspect();
     setAspectGuideAspect(aspect);
-  }
+  },
+  persistCompletedOutput: async (job) => {
+    await persistCompletedGenerationOutput(job);
+  },
+  loadSceneForJob
 });
 
 const {
@@ -315,8 +390,23 @@ const {
 } = sceneController;
 
 function sourceIdFromManifestPath(manifestPath) {
-  const match = String(manifestPath || '').match(/\/source\/(src_\d{4})\//);
+  const match = String(manifestPath || '').match(/(?:^|\/)source\/(src_\d{4})\//);
   return match?.[1] || null;
+}
+
+function toAssetUrl(assetPath) {
+  const raw = String(assetPath || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  if (raw.startsWith('/')) return raw;
+  return `/${raw.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+function parseLocalGenerationManifestPath(manifestPath) {
+  const normalized = String(manifestPath || '').replace(/^\/+/, '');
+  const match = normalized.match(/^source\/(src_\d{4})\/generations\/([^/]+)\/scene_manifest\.json$/);
+  if (!match) return null;
+  return { sourceId: match[1], generationId: match[2], normalizedPath: normalized };
 }
 
 function getLoadedSourceId() {
@@ -429,6 +519,97 @@ async function readJsonResponse(res, label) {
     throw new Error(data?.detail || data?.error || `${label} failed with status ${res.status}`);
   }
   return data;
+}
+
+async function persistCompletedGenerationOutput(job) {
+  if (!sessionDirHandle || !job?.job_id || !job?.scene_manifest_path) return;
+  const local = parseLocalGenerationManifestPath(job.scene_manifest_path);
+  if (local) {
+    if (!job.source_id) job.source_id = local.sourceId;
+    return;
+  }
+
+  const sourceId = job.source_id || sourceIdFromManifestPath(job.scene_manifest_path) || sessionData?.active_source;
+  if (!sourceId || !/^src_\d{4}$/.test(sourceId)) return;
+
+  const manifestRes = await fetch(toAssetUrl(job.scene_manifest_path));
+  if (!manifestRes.ok) {
+    throw new Error(`Failed to fetch generated manifest (${manifestRes.status})`);
+  }
+  const rawManifest = await manifestRes.json();
+  const manifest = rawManifest && typeof rawManifest === 'object' ? rawManifest : {};
+  const remotePlyPath = String(manifest.ply_path || '').trim();
+  if (!remotePlyPath) {
+    throw new Error('Generated manifest is missing ply_path.');
+  }
+  const plyRes = await fetch(toAssetUrl(remotePlyPath));
+  if (!plyRes.ok) {
+    throw new Error(`Failed to fetch generated PLY (${plyRes.status})`);
+  }
+  const plyBlob = await plyRes.blob();
+
+  const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
+  const srcDir = await sourceDir.getDirectoryHandle(sourceId, { create: true });
+  await ensureSourceFolderLayout(srcDir);
+  const generationsDir = await srcDir.getDirectoryHandle('generations', { create: true });
+  const genDir = await generationsDir.getDirectoryHandle(job.job_id, { create: true });
+
+  const localManifestPath = `source/${sourceId}/generations/${job.job_id}/${LOCAL_GEN_MANIFEST}`;
+  const localPlyPath = `source/${sourceId}/generations/${job.job_id}/${LOCAL_GEN_PLY}`;
+  await writeBlobFile(genDir, LOCAL_GEN_PLY, plyBlob);
+  await writeTextFile(
+    genDir,
+    LOCAL_GEN_MANIFEST,
+    JSON.stringify(
+      {
+        ...manifest,
+        version: manifest.version || '1.0',
+        generated_at: manifest.generated_at || new Date().toISOString(),
+        source_id: sourceId,
+        job_id: job.job_id,
+        ply_path: localPlyPath
+      },
+      null,
+      2
+    )
+  );
+
+  job.scene_manifest_path = localManifestPath;
+  job.source_id = sourceId;
+  job.local_output_saved = true;
+}
+
+async function loadSceneForJob(job) {
+  const local = parseLocalGenerationManifestPath(job?.scene_manifest_path);
+  if (!local || !sessionDirHandle) {
+    await sceneController.loadGeneratedSceneFromJob(job);
+    return;
+  }
+
+  const sourceDir = await sessionDirHandle.getDirectoryHandle('source');
+  const srcDir = await sourceDir.getDirectoryHandle(local.sourceId);
+  const generationsDir = await srcDir.getDirectoryHandle('generations');
+  const genDir = await generationsDir.getDirectoryHandle(local.generationId);
+  const manifestHandle = await genDir.getFileHandle(LOCAL_GEN_MANIFEST);
+  const manifestFile = await manifestHandle.getFile();
+  const manifest = JSON.parse(await manifestFile.text());
+
+  let plyHandle;
+  try {
+    const localPlyName = String(manifest?.ply_path || '').split('/').pop() || LOCAL_GEN_PLY;
+    plyHandle = await genDir.getFileHandle(localPlyName);
+  } catch {
+    plyHandle = await genDir.getFileHandle(LOCAL_GEN_PLY);
+  }
+  const plyFile = await plyHandle.getFile();
+  const plyArrayBuffer = await plyFile.arrayBuffer();
+  if (!job.source_id) job.source_id = local.sourceId;
+
+  await sceneController.loadGeneratedSceneFromPayload({
+    jobId: job.job_id,
+    manifest,
+    plyArrayBuffer
+  });
 }
 
 // ── Event handlers ────────────────────────────────────────
@@ -613,7 +794,7 @@ document.getElementById('refFile').onchange = async () => {
     const sourceDir = await sessionDirHandle.getDirectoryHandle('source', { create: true });
     const srcId = await nextSourceId(sourceDir);
     const srcDir = await sourceDir.getDirectoryHandle(srcId, { create: true });
-    await srcDir.getDirectoryHandle('captures', { create: true });
+    await ensureSourceFolderLayout(srcDir);
     await writeBlobFile(srcDir, file.name, file);
     if (!sessionData.sources) sessionData.sources = [];
     sessionData.sources.push({ id: srcId, filename: file.name });

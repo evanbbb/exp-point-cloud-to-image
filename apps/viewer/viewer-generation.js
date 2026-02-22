@@ -6,7 +6,9 @@ export function createGenerationController({
   isCompletedStatus,
   sceneController,
   sourceIdFromManifestPath,
-  ensureActiveSourceAspect
+  ensureActiveSourceAspect,
+  persistCompletedOutput,
+  loadSceneForJob
 }) {
   let autoPollTimer = null;
   function generationQuery(sessionData) {
@@ -117,6 +119,7 @@ export function createGenerationController({
     const prevProgress = activeJob.progress_percent;
     const prevStage = activeJob.stage;
     const prevManifestPath = activeJob.scene_manifest_path;
+    const prevSourceId = activeJob.source_id;
     const prevError = activeJob.error ? JSON.stringify(activeJob.error) : '';
     const prevLogs = Array.isArray(activeJob.logs_tail) ? activeJob.logs_tail : [];
     const nextLogs = Array.isArray(data.logs_tail) ? data.logs_tail : prevLogs;
@@ -127,6 +130,22 @@ export function createGenerationController({
     if (data.scene_manifest_path) activeJob.scene_manifest_path = data.scene_manifest_path;
     if (Array.isArray(data.logs_tail)) activeJob.logs_tail = data.logs_tail;
     if (data.error) activeJob.error = data.error;
+    if (!activeJob.source_id) {
+      const inferredSourceId = sourceIdFromManifestPath(activeJob.scene_manifest_path) || sessionData?.active_source || undefined;
+      if (inferredSourceId) activeJob.source_id = inferredSourceId;
+    }
+
+    if (
+      isCompletedStatus(activeJob.status) &&
+      activeJob.scene_manifest_path &&
+      typeof persistCompletedOutput === 'function'
+    ) {
+      try {
+        await persistCompletedOutput(activeJob);
+      } catch (error) {
+        log({ warning: `Failed to persist generation ${activeJob.job_id} locally: ${String(error)}` });
+      }
+    }
 
     const logsChanged =
       prevLogs.length !== nextLogs.length ||
@@ -136,6 +155,7 @@ export function createGenerationController({
       activeJob.progress_percent !== prevProgress ||
       activeJob.stage !== prevStage ||
       activeJob.scene_manifest_path !== prevManifestPath ||
+      activeJob.source_id !== prevSourceId ||
       (activeJob.error ? JSON.stringify(activeJob.error) : '') !== prevError ||
       logsChanged;
 
@@ -154,6 +174,7 @@ export function createGenerationController({
       progress_percent: data.progress_percent ?? activeJob.progress_percent,
       created_at: data.created_at ?? activeJob.created_at,
       updated_at: data.updated_at ?? activeJob.updated_at,
+      source_id: activeJob.source_id ?? null,
       scene_manifest_path: data.scene_manifest_path ?? activeJob.scene_manifest_path,
       error: data.error ?? null,
       logs_tail: Array.isArray(data.logs_tail) ? data.logs_tail : []
@@ -193,6 +214,18 @@ export function createGenerationController({
       throw new Error(`Job ${jobId} has no scene_manifest_path.`);
     }
 
+    if (
+      isCompletedStatus(localJob.status) &&
+      localJob.scene_manifest_path &&
+      typeof persistCompletedOutput === 'function'
+    ) {
+      try {
+        await persistCompletedOutput(localJob);
+      } catch (error) {
+        log({ warning: `Failed to persist generation ${localJob.job_id} locally: ${String(error)}` });
+      }
+    }
+
     if (sceneController.getLoadedGeneratedJobId() === jobId) {
       if (!quiet) log(`[${jobId}] already loaded.`);
       return;
@@ -202,7 +235,11 @@ export function createGenerationController({
       await ensureActiveSourceAspect(localJob);
     }
 
-    await sceneController.loadGeneratedSceneFromJob(localJob);
+    if (typeof loadSceneForJob === 'function') {
+      await loadSceneForJob(localJob);
+    } else {
+      await sceneController.loadGeneratedSceneFromJob(localJob);
+    }
     localJob.loaded_at = new Date().toISOString();
     await writeSessionFile();
     renderJobList();

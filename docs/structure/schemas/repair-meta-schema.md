@@ -5,8 +5,9 @@ This document describes the metadata object validated by `shared/schemas/repair-
 ## Where It Is Used
 
 - Produced by `POST /api/repair` in `apps/server/src/routes/repair.ts`.
-- Returned via `GET /api/repairs/list` (metadata array).
-- Not persisted to disk by current implementation; stored in memory with retention limits.
+- Optionally fetched immediately after run via `GET /api/repairs/:repairId/meta`.
+- Persisted by the browser to local working folder at:
+  - `source/src_####/repairs/repair_<id>/repair_meta.json`
 
 ## Purpose
 
@@ -28,10 +29,10 @@ This document describes the metadata object validated by `shared/schemas/repair-
   "duration_ms": 31667,
   "status": "succeeded",
   "input": {
-    "reference_image_path": "WorkA/repairs/repair_0001/input/reference.png",
-    "target_image_path": "WorkA/repairs/repair_0001/input/target.png",
-    "delta_pose_path": "WorkA/repairs/repair_0001/input/delta_pose.json",
-    "camera_path": "WorkA/repairs/repair_0001/input/camera.json"
+    "reference_image_path": "source/src_0001/reference.png",
+    "target_image_path": "source/src_0001/captures/cap_0003/target.png",
+    "delta_pose_path": "source/src_0001/captures/cap_0003/delta_pose.json",
+    "camera_path": "source/src_0001/captures/cap_0003/camera.json"
   },
   "fal": {
     "model": "fal-ai/flux-2/klein/9b/base/edit/lora",
@@ -64,7 +65,7 @@ This document describes the metadata object validated by `shared/schemas/repair-
     }
   },
   "output": {
-    "repaired_image_path": "/api/repairs/repair_0001/image?session_id=SESSION_20260222_101010&session_bucket=WorkA",
+    "repaired_image_path": "source/src_0001/repairs/repair_0001/repaired.png",
     "width": 1920,
     "height": 1080,
     "bytes": 1823401
@@ -104,4 +105,4 @@ Required fields:
 
 ## Retention Note
 
-Repair metadata and image buffers are kept in server memory only and may disappear due to restart or eviction limits.
+Server-side metadata is transient, but persisted local `repair_meta.json` files are the long-term history source.

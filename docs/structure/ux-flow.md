@@ -33,7 +33,10 @@ Current implemented user flow across Workspace, Viewer, Repair, Settings, and th
    - Upload reference via `POST /api/generate/sync-reference`.
    - Start job via `POST /api/generate` using returned `memory://...` reference path.
    - Poll status via `GET /api/generate/:jobId`.
-   - Load output via in-memory asset endpoints referenced by `scene_manifest_path`.
+   - On completion, copy generation artifacts into local source folder:
+     - `source/src_####/generations/gen_<jobId>/scene_manifest.json`
+     - `source/src_####/generations/gen_<jobId>/scene.ply`
+   - Load output from local generation files.
 5. Camera/capture workflow:
    - Set original shot view.
    - Capture new view writes local files to `source/src_####/captures/cap_####/`.
@@ -51,7 +54,10 @@ Current implemented user flow across Workspace, Viewer, Repair, Settings, and th
    - delta pose JSON
    - camera JSON
    - prompt text
-6. Fetch prior repair metadata via `GET /api/repairs/list` and render prior images using `GET /api/repairs/:repairId/image`.
+6. Persist each repair run to local source folder:
+   - `source/src_####/repairs/repair_<id>/repair_meta.json`
+   - `source/src_####/repairs/repair_<id>/repaired.png` (success only)
+7. Previous repairs panel reads history from local `repairs/` folders.
 
 ## Settings flow (`/settings`)
 
@@ -68,11 +74,12 @@ Current implemented user flow across Workspace, Viewer, Repair, Settings, and th
   - `settings.json` only
 - Server-transient (in-memory):
   - Generation jobs, generated assets, uploaded generation references
-  - Repair metadata and repair image payloads
+  - Repair metadata and repair image payloads for immediate request/response lifecycle
 
 Retention expectations:
 
 - Server-transient data is lost when the server restarts.
+- Persisted viewer/repair history remains in the selected working folder across server restarts.
 - Some server data may disappear during runtime due to eviction limits:
   - generation references and assets use TTL + max-count limits
   - generation jobs and repair history use per-session max-count limits

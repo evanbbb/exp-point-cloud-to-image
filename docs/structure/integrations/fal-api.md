@@ -14,7 +14,7 @@ Current integration for `POST /api/repair`.
 2. Server uploads reference/target bytes to fal staging via `fal.storage.upload(...)`.
 3. Server calls `fal.subscribe(...)` with prompt + image URLs + LoRA params.
 4. Server fetches returned image URL and returns `image/png` to browser.
-5. Server also keeps repair metadata/image in memory for list/history endpoints.
+5. Browser persists returned repair output and metadata into local working-folder `repairs/` history.
 
 ## Prompt Behavior
 
@@ -36,7 +36,7 @@ Current integration for `POST /api/repair`.
 - Browser never calls fal directly.
 - Fal credentials are server-side (`settings.json` or `FAL_KEY` env var).
 - Fal requires staged/public URLs for input images.
-- Repair image history exposed by API is server-transient (in-memory), not persisted to working folder.
+- Server metadata/image endpoints remain transient (in-memory); durable history lives in local working-folder `repairs/`.
 
 ## Licensing
 
