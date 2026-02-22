@@ -1,8 +1,7 @@
 # istanbul3d
 
 Local-first viewer + repair workflow for SHARP generation and FLUX repair.
-
-![istanbul3d icon](apps/workspace/favicon.png)
+Release: `v1.0` — `2026-02-22`
 
 ## Example Output
 
