@@ -1,63 +1,78 @@
 # UX Flow
 
-This is the implemented user flow across Viewer, Server, and Repair.
+Current implemented user flow across Workspace, Viewer, Repair, Settings, and the local server.
 
 ## End-to-end map
 
-1. User opens `/viewer`.
-2. User picks a session folder.
-3. User either initializes a new session or loads an existing one.
-4. User uploads/selects a source image (`src_####`).
-5. User starts generation (`/api/generate/sync-reference` then `/api/generate`).
-6. Viewer polls generation status (`/api/generate/:jobId`) and auto-loads completed output.
-7. User frames shot camera and captures views (`cap_####` with `target.png`, `camera.json`, `delta_pose.json`).
-8. Capture files are also synced to server (`/api/capture/sync`).
-9. User opens `/repair` (currently informational page only).
-10. If repair is invoked via API/tooling, server runs `/api/repair` and writes `repaired.png` + `repair_meta.json`.
+1. User opens `/`.
+2. Server redirects to `/workspace`.
+3. User selects a working folder with File System Access API (`showDirectoryPicker`).
+4. Folder handle is saved in IndexedDB (`istanbul3d-working-folder`, key `session_dir_handle`).
+5. User opens `/viewer` or `/repair`.
+6. Viewer/Repair load the saved handle and request read/write permission.
+7. If handle is missing or permission denied, Viewer/Repair redirect back to `/workspace?next=...`.
 
-## Viewer UI states
+## Workspace flow (`/workspace`)
 
-`apps/viewer/viewer-app.js` manages a 3-state UI:
+- Primary action: `Select Working Folder`.
+- Secondary action: `Clear Saved Folder`.
+- Continue actions become enabled only when a valid folder handle is available:
+  - `Open Viewer`
+  - `Open Repair`
+  - `Open Settings`
+- If `next` query param is valid (`/viewer` or `/repair`), workspace auto-navigates there after a successful selection.
 
-1. `pick`: landing screen, `Pick Session Folder`.
-2. `confirm`: shown when selected folder lacks `istanbul3d_session.json`; user can initialize.
-3. `ready`: main workspace with source selector, 3D viewport, camera controls, generation jobs, capture.
+## Viewer flow (`/viewer`)
 
-## Core interactions in Viewer
+1. Load working folder handle from IndexedDB.
+2. Load `istanbul3d_session.json` from the selected folder, or initialize one if missing.
+3. Source workflow:
+   - Select an existing source (`src_####`) or upload a new image.
+   - New uploads are copied to `source/src_####/<filename>`.
+4. Generation workflow:
+   - Upload reference via `POST /api/generate/sync-reference`.
+   - Start job via `POST /api/generate` using returned `memory://...` reference path.
+   - Poll status via `GET /api/generate/:jobId`.
+   - Load output via in-memory asset endpoints referenced by `scene_manifest_path`.
+5. Camera/capture workflow:
+   - Set original shot view.
+   - Capture new view writes local files to `source/src_####/captures/cap_####/`.
+   - Capture writes only to the working folder; no server capture sync route is used.
 
-1. Session setup:
-   - `showDirectoryPicker()` selects folder.
-   - Existing session file loads and migrates old single-source layout if needed.
-2. Source management:
-   - `+ New Image` creates `source/src_####/`, copies selected file, and creates `captures/`.
-   - Active source drives image plane overlay and aspect guide.
-3. Generation:
-   - Start button uploads reference image to server session path.
-   - Viewer starts generation job and tracks it in local session JSON.
-   - Poll loop updates progress, status, logs tail, and supports cancel.
-   - Completed jobs expose `Load Output`; completed jobs can auto-load.
-4. Camera workflow:
-   - Orbit camera for scene navigation.
-   - Shot camera for output framing and lens presets (24/35/50/85mm).
-   - `Set Original View` and `Reset To Original View` define delta baseline.
-5. Capture workflow:
-   - `Capture New View` writes `target.png`, `camera.json`, `delta_pose.json` into next `cap_####`.
-   - Same payload syncs to server and optionally opens Finder.
+## Repair flow (`/repair`)
 
-## Repair UX status
+1. Load working folder handle and session file.
+2. Choose source from session sources.
+3. Enumerate local captures from `source/src_####/captures/`.
+4. Select capture, optionally add notes, confirm paid usage, choose run count.
+5. For each run, call `POST /api/repair` with:
+   - reference image
+   - target capture image
+   - delta pose JSON
+   - camera JSON
+   - prompt text
+6. Fetch prior repair metadata via `GET /api/repairs/list` and render prior images using `GET /api/repairs/:repairId/image`.
 
-- `apps/repair/index.html` is currently a static guidance page.
-- Queueing/running repairs is not implemented in browser UI yet.
-- Repair capability exists server-side at `POST /api/repair` and requires:
-  - multipart files: `reference`, `target`, `delta_pose`, `camera`, optional `notes`
-  - `paid_confirm=true`
-  - valid `FAL_KEY` in environment
+## Settings flow (`/settings`)
 
-## Primary handoffs between UX steps
+- Read settings status via `GET /api/settings`.
+- Save FAL key via `POST /api/settings`.
+- Settings persist to `settings.json` at repository root.
 
-1. Viewer -> Generation:
-   - `reference_image_path` points to `shots/.../source/src_####/<filename>`.
-2. Generation -> Viewer:
-   - `scene_manifest_path` returned in job status; viewer loads PLY from this manifest.
-3. Viewer Capture -> Repair:
-   - Repair expects capture triplet (`target.png`, `camera.json`, `delta_pose.json`) plus original reference image.
+## Persistence boundaries
+
+- Browser-persistent:
+  - Working folder content (user-selected path)
+  - IndexedDB folder handle reference
+- Server-persistent:
+  - `settings.json` only
+- Server-transient (in-memory):
+  - Generation jobs, generated assets, uploaded generation references
+  - Repair metadata and repair image payloads
+
+Retention expectations:
+
+- Server-transient data is lost when the server restarts.
+- Some server data may disappear during runtime due to eviction limits:
+  - generation references and assets use TTL + max-count limits
+  - generation jobs and repair history use per-session max-count limits

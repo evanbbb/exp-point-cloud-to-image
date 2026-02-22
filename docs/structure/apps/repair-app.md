@@ -1,84 +1,48 @@
-# Repair App (/repair)
+# Repair App (`/repair`)
 
-Purpose:
-Select captured views and send them to FLUX for paid repair.
+Part B workflow: choose a capture, preview prompt context, run FLUX-based repair, and inspect prior results.
 
-Current status:
+## Entry behavior
 
-- Browser page is currently informational only (`apps/repair/index.html`).
-- Queueing/running repairs is currently handled by direct server API usage, not an interactive Repair UI yet.
+- Requires a saved working folder handle.
+- If handle is missing/denied, redirects to `/workspace?next=/repair`.
 
-Reads:
+## Main responsibilities
 
-source/src_####/<reference-filename>
-source/src_####/captures/*
+- Load session data and sources from selected working folder.
+- Enumerate captures for active source from `source/src_####/captures/`.
+- Show source thumbnail, capture grid, and selected capture state.
+- Build repair prompt using capture delta pose plus optional notes.
+- Submit repair runs to `POST /api/repair`.
+- Render previous repairs from:
+  - `GET /api/repairs/list`
+  - `GET /api/repairs/:repairId/image`
 
-Writes:
+## UI capabilities
 
-repairs/repair_####/
+- Source selector.
+- Capture selection (single selection at a time).
+- Prompt preview.
+- Paid confirmation checkbox.
+- Run count selector (1-4).
+- Previous repairs panel scoped by source/capture.
+- Lightbox and compare overlay (source vs capture vs repair).
 
-UI:
+## Inputs and outputs
 
-- Static page describing Part B flow and API expectations.
+### Local inputs (working folder)
 
-Planned UI (not yet implemented):
+- source reference image
+- selected capture `target.png`
+- selected capture `camera.json`
+- selected capture `delta_pose.json`
 
-- Pick Session Folder
-- Grid of captures (from thumb.jpg or downscaled target.png)
-- Multi-select allowed
-- Notes field (optional)
-- Queue Repair
-- Run Repair (paid)
+### Server outputs
 
-Queue Repair (planned):
+- Immediate repaired PNG response from `/api/repair`.
+- In-memory repair metadata and image endpoints for history browsing.
 
-Creates:
+## Data boundaries
 
-repairs/repair_####/input/
-
-Copies:
-
-reference.png
-target.png
-delta_pose.json
-camera.json
-notes.txt (if present)
-
-Run Repair (implemented in server API):
-
-POSTs to localhost server:
-
-/api/repair
-
-Payload:
-
-reference.png
-target.png
-delta_pose.json
-camera.json
-notes.txt
-
-Server behavior:
-
-- Builds FLUX prompt
-- Calls fal.ai
-- Returns `image/png`
-
-Server writes:
-
-repairs/repair_####/output/repaired.png
-repairs/repair_####/output/repair_meta.json
-
-Prompt Template:
-
-Referring to the scene in image 1, restore the perspective of the scene in image 2.
-Repair missing regions and perspective artifacts.
-The camera has moved by: {x,y,z,pitch,yaw,roll}
-
-Append notes.txt if present.
-
-Guardrails:
-
-- Explicit checkbox: "This uses paid API"
-- Show number of queued repairs
-- Optional daily limit in server config
+- Local persistent data remains in working folder captures/sources.
+- Repair results are server-transient (in-memory), not persisted to working folder by current implementation.

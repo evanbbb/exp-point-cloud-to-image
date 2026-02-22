@@ -1,82 +1,57 @@
 # Local Server Responsibilities
 
-Single localhost server.
+Single local Express server (default `http://localhost:8787`).
 
-Serves:
+## Static routes
 
-/viewer
-/repair
+- `/workspace`
+- `/viewer`
+- `/repair`
+- `/settings`
+- `/shared`
 
-Also exposes minimal API endpoints.
+`/` redirects to `/workspace`.
 
-No auth.
-Local only.
-Personal use.
+## API routes
 
----
+- `GET /api/health`
+- `GET /api/settings`
+- `POST /api/settings`
+- `POST /api/generate/sync-reference`
+- `POST /api/generate`
+- `GET /api/generate/:jobId`
+- `POST /api/generate/:jobId/cancel`
+- `GET /api/generate/:jobId/asset/:assetName`
+- `GET /api/repairs/list`
+- `GET /api/repairs/:repairId/image`
+- `POST /api/repair`
 
-## Required Endpoints
+## Storage model
 
-POST /api/repair
+- No `/shots` static mount.
+- No server-side default storage root.
+- No `/api/open-folder` endpoint.
+- No `/api/capture/sync` endpoint.
 
-Input (multipart/form-data):
+Persistence behavior:
 
-- reference.png
-- target.png
-- delta_pose.json
-- camera.json
-- notes.txt (optional)
+- Persisted: `settings.json` (repo root).
+- In-memory only:
+  - generation jobs/status
+  - generation manifest/PLY assets
+  - uploaded generation references
+  - repair list and repair image payloads
 
-Output:
+Retention/eviction behavior:
 
-image/png
-(binary repaired image)
+- All in-memory data is lost on server restart.
+- Generation references: 10-minute TTL, capped at 200 entries.
+- Generation assets (manifest/PLY): 60-minute TTL, capped at 200 entries.
+- Generation jobs: capped at 200 entries per session; terminal jobs expire after 6 hours.
+- Repair history/images: capped at 200 entries per session; entries expire after 24 hours.
 
-Optional JSON wrapper:
+## Security and deployment assumptions
 
-{
-  "image_base64": "...",
-  "meta": {...}
-}
-
----
-
-## Server Flow for /api/repair
-
-1. Receive uploaded files
-2. Read delta_pose.json
-3. Construct prompt
-4. Call fal.ai FLUX endpoint
-5. Receive repaired image
-6. Return image to browser
-
----
-
-## Optional Helpers
-
-GET /api/health
-Returns OK if fal credentials valid.
-
-GET /api/version
-Returns local build version.
-
----
-
-## Tech Assumptions
-
-- Node.js or Python
-- fal.ai SDK or raw HTTP
-- Runs on localhost only
-- API key stored in env var:
-
-FAL_KEY
-
-Never exposed to browser.
-
----
-
-## Optional Guardrails
-
-- Max repairs per session
-- Daily spend limit
-- Require explicit "paid render" flag from client
+- Localhost development tool, no auth layer.
+- Intended for single-user local operation.
+- FAL API key is stored server-side only and never exposed directly from server config in browser code.

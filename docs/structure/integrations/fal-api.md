@@ -1,80 +1,43 @@
 # fal.ai FLUX Repair Integration
 
-Model:
+Current integration for `POST /api/repair`.
 
-fal-ai/flux-2/klein/9b/base/edit/lora
+## Model Configuration
 
-LoRA:
+- Model: `fal-ai/flux-2/klein/9b/base/edit/lora`
+- LoRA: `cyrildiagne/flux2-klein9b-lora-mlsharp-3d-repair`
+- Source of truth: `apps/server/src/lib/config.ts`
 
-cyrildiagne/flux2-klein9b-lora-mlsharp-3d-repair
+## Server-side Flow
 
----
+1. Browser uploads `reference`, `target`, `delta_pose`, and `camera` to local server.
+2. Server uploads reference/target bytes to fal staging via `fal.storage.upload(...)`.
+3. Server calls `fal.subscribe(...)` with prompt + image URLs + LoRA params.
+4. Server fetches returned image URL and returns `image/png` to browser.
+5. Server also keeps repair metadata/image in memory for list/history endpoints.
 
-## Prompt Template (REQUIRED)
+## Prompt Behavior
 
-Referring to the scene in image 1, restore the perspective of the scene in image 2.
-Repair missing regions and perspective artifacts.
-The camera has moved by: {x,y,z,pitch,yaw,roll}
+- Prompt text is composed client-side in `apps/repair/repair-app.js`.
+- It always includes delta-pose JSON values and may include user notes.
+- Prompt wording is intentionally constrained by UI templates, but it is not enforced by server-side template validation.
 
-Append notes.txt if present.
+## Default Inference Parameters
 
-Do NOT reword this.
+- `num_inference_steps`: `28`
+- `guidance_scale`: `5`
+- `output_format`: `png`
+- `num_images`: `1`
+- `loras[0].scale`: `1.0`
+- `seed`: `null` (unset by default)
 
----
+## Operational Notes
 
-## Default Parameters
-
-num_inference_steps: 28
-guidance_scale: 5
-lora_scale: 1.0
-output_format: png
-num_images: 1
-
-Seed optional.
-
----
-
-## Server-side Call (JS example)
-
-import { fal } from "@fal-ai/client";
-
-const result = await fal.subscribe(
-  "fal-ai/flux-2/klein/9b/base/edit/lora",
-  {
-    input: {
-      prompt,
-      image_urls: [referenceUrl, targetUrl],
-      loras: [
-        {
-          path: "cyrildiagne/flux2-klein9b-lora-mlsharp-3d-repair",
-          scale: 1.0
-        }
-      ],
-      num_inference_steps: 28,
-      guidance_scale: 5,
-      output_format: "png"
-    }
-  }
-);
-
-result.data.images[0].url
-
----
-
-## Important Notes
-
-- fal requires public URLs or uploaded files
-- Browser never calls fal directly
-- Server uploads temp images or streams bytes
-- Output image is written to:
-
-repairs/repair_####/output/repaired.png
-
----
+- Browser never calls fal directly.
+- Fal credentials are server-side (`settings.json` or `FAL_KEY` env var).
+- Fal requires staged/public URLs for input images.
+- Repair image history exposed by API is server-transient (in-memory), not persisted to working folder.
 
 ## Licensing
 
-LoRA is CC BY-NC 4.0.
-
-Personal projects OK.
-Commercial use NOT allowed.
+LoRA license is CC BY-NC 4.0. Confirm suitability before commercial use.

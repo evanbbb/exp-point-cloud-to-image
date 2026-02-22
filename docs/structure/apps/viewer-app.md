@@ -1,84 +1,44 @@
-# Viewer App (/viewer)
+# Viewer App (`/viewer`)
 
-Purpose:
-Interactive navigation of SHARP Gaussian splats with camera controls and capture.
+Part A workflow: source image selection, 3D generation, shot framing, and capture export.
 
-Responsibilities:
+## Entry behavior
 
-- Load splat scene
-- Orbit + dolly camera
-- Lens switching
-- Export capture bundles
-- Read repaired images back
+- Requires a saved working folder handle.
+- If handle is missing/denied, redirects to `/workspace?next=/viewer`.
 
-Tech:
+## Key modules
 
-- three.js
-- Gaussian splat renderer (e.g. GaussianSplats3D)
-- File System Access API
+- `apps/viewer/viewer-app.js`: UI orchestration and workflow wiring.
+- `apps/viewer/viewer-generation.js`: generation jobs, polling, load output.
+- `apps/viewer/viewer-scene.js`: three.js scene, cameras, overlays, capture.
 
-UI:
+## UI states
 
-- Pick Session Folder
-- Load Splats
-- Orbit Controls
-- Mouse wheel = dolly zoom
-- Lens Preset Dropdown:
-  - 24mm
-  - 35mm
-  - 50mm
-  - 85mm
+- `pick`: waiting for valid working folder handle.
+- `ready`: full viewer UI.
 
-Buttons:
+## Main responsibilities
 
-- Capture View
-- Load Repaired
-- Capture PNG (raw screenshot)
+- Read/create `istanbul3d_session.json` in working folder.
+- Manage sources (`src_####`) and active source selection.
+- Upload reference via `/api/generate/sync-reference`.
+- Start generation via `/api/generate`.
+- Poll `/api/generate/:jobId` and load output assets from `/api/generate/:jobId/asset/...`.
+- Render image plane overlay and aspect guide for active source.
+- Capture camera outputs to local working folder:
+  - `target.png`
+  - `camera.json`
+  - `delta_pose.json`
 
-Capture View creates:
+## Camera and capture behavior
 
-source/captures/cap_####/
+- Orbit and shot cameras with lens presets (24/35/50/85mm).
+- Original shot pose can be set/reset.
+- `Capture New View` writes next `cap_####` directory in local source captures.
+- No server capture sync route is used.
 
-Files written:
+## Data boundaries
 
-target.png
-delta_pose.json
-camera.json
-thumb.jpg (optional)
-
-reference.png is copied once into source/
-
-Lens behavior:
-
-- Lens preset = focal length / FOV change
-- Zoom = camera dolly
-
-Never mix these.
-
-delta_pose.json:
-
-Pose of current camera relative to original reference camera.
-
-Units:
-- meters
-- degrees
-
-Camera origin must be saved at time of first load.
-
-Capture PNG:
-
-Exports current canvas directly (no repair).
-
-Load Repaired:
-
-Reads repairs/*/output/repaired.png and displays side-by-side or overlay.
-
-Scene Helpers (grid, axes, camera):
-
-- GridHelper and AxesHelper are repositioned and rescaled on every scene load to match the
-  loaded point cloud's bounding sphere radius. Grid is placed at box.min.y - 0.02 to avoid
-  Z-fighting with ground-level points.
-- Shot camera near/far clip planes are also updated on load (near = radius * 0.01,
-  far = radius * 20) because the default far=20 clips helpers for larger scenes.
-- All three helpers (grid, axes, cameraHelper) are hidden during canvas capture (captureCurrentViewPng)
-  and restored in a finally block so they never appear in exported PNGs.
+- Local persistent data: session/source/capture files in selected working folder.
+- Server-dependent transient data: generation job state and generated scene assets.

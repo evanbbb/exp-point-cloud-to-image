@@ -1,31 +1,37 @@
-# repair_meta.json Schema
+# Repair Meta Schema
 
-This document defines the V0 metadata contract written to:
+This document describes the metadata object validated by `shared/schemas/repair-meta.ts`.
 
-`shots/<SESSION_ID>/repairs/repair_####/output/repair_meta.json`
+## Where It Is Used
+
+- Produced by `POST /api/repair` in `apps/server/src/routes/repair.ts`.
+- Returned via `GET /api/repairs/list` (metadata array).
+- Not persisted to disk by current implementation; stored in memory with retention limits.
 
 ## Purpose
-- Record reproducibility inputs for each repair.
-- Capture timing/status for debugging.
-- Preserve error details for failed attempts.
 
-## Schema (V0)
+- Capture reproducibility inputs for each repair run.
+- Record timing, status, and failure detail.
+- Provide image lookup path for prior repairs in the UI.
+
+## Schema (V1 current)
 
 ```json
 {
   "schema_version": "1.0",
   "repair_id": "repair_0001",
-  "session_id": "SESSION_20260218_130501",
-  "created_at": "2026-02-18T13:20:10.443Z",
-  "completed_at": "2026-02-18T13:20:42.110Z",
+  "session_id": "SESSION_20260222_101010",
+  "source_id": "src_0001",
+  "cap_id": "cap_0003",
+  "created_at": "2026-02-22T10:20:10.443Z",
+  "completed_at": "2026-02-22T10:20:42.110Z",
   "duration_ms": 31667,
   "status": "succeeded",
   "input": {
-    "reference_image_path": "shots/SESSION_20260218_130501/repairs/repair_0001/input/reference.png",
-    "target_image_path": "shots/SESSION_20260218_130501/repairs/repair_0001/input/target.png",
-    "delta_pose_path": "shots/SESSION_20260218_130501/repairs/repair_0001/input/delta_pose.json",
-    "camera_path": "shots/SESSION_20260218_130501/repairs/repair_0001/input/camera.json",
-    "notes_path": "shots/SESSION_20260218_130501/repairs/repair_0001/input/notes.txt"
+    "reference_image_path": "WorkA/repairs/repair_0001/input/reference.png",
+    "target_image_path": "WorkA/repairs/repair_0001/input/target.png",
+    "delta_pose_path": "WorkA/repairs/repair_0001/input/delta_pose.json",
+    "camera_path": "WorkA/repairs/repair_0001/input/camera.json"
   },
   "fal": {
     "model": "fal-ai/flux-2/klein/9b/base/edit/lora",
@@ -42,13 +48,12 @@ This document defines the V0 metadata contract written to:
       "num_images": 1,
       "seed": null
     },
-    "request_id": "optional_provider_request_id",
     "uploaded_reference_url": "optional_staging_url",
     "uploaded_target_url": "optional_staging_url"
   },
   "prompt": {
     "template_version": "1.0",
-    "text": "Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair missing regions and perspective artifacts. The camera has moved by: {x,y,z,pitch,yaw,roll}",
+    "text": "Rendered repair prompt text...",
     "delta_pose_values": {
       "x": 0.32,
       "y": -0.05,
@@ -59,7 +64,7 @@ This document defines the V0 metadata contract written to:
     }
   },
   "output": {
-    "repaired_image_path": "shots/SESSION_20260218_130501/repairs/repair_0001/output/repaired.png",
+    "repaired_image_path": "/api/repairs/repair_0001/image?session_id=SESSION_20260222_101010&session_bucket=WorkA",
     "width": 1920,
     "height": 1080,
     "bytes": 1823401
@@ -69,33 +74,34 @@ This document defines the V0 metadata contract written to:
 ```
 
 ## Field Rules
-- `schema_version`: required string, start with `1.0`.
+
+- `schema_version`: literal `"1.0"`.
 - `status`: one of `succeeded | failed`.
-- `created_at`: required ISO 8601 timestamp.
-- `completed_at`: required ISO 8601 timestamp when terminal.
-- `duration_ms`: required non-negative integer when terminal.
-- `input.*_path`: project-relative paths.
-- `fal.model`: required.
-- `fal.loras`: required array; at least one entry for this workflow.
-- `prompt.text`: final fully-rendered prompt sent to provider.
-- `error`: required; `null` on success, object on failure.
+- `source_id` and `cap_id`: optional, used for source/capture-scoped UI filtering.
+- `created_at` / `completed_at`: ISO timestamps.
+- `duration_ms`: non-negative integer.
+- `input.*_path`: string fields used as logical provenance paths.
+- `fal.parameters.output_format`: literal `"png"`.
+- `fal.parameters.num_images`: literal `1`.
+- `output`: present on success, omitted on failure.
+- `error`: `null` on success, object on failure.
 
 ## Error Object (when `status=failed`)
 
 ```json
 {
-  "code": "FAL_REQUEST_FAILED",
-  "message": "fal returned 403 Forbidden",
-  "retryable": false
+  "code": "FAL_TIMEOUT",
+  "message": "timeout details...",
+  "retryable": true
 }
 ```
 
 Required fields:
+
 - `code` (string)
 - `message` (string)
 - `retryable` (boolean)
 
-## Redaction Rules
-- Never include `FAL_KEY` or any secret token.
-- Keep staged upload URLs optional and non-sensitive.
+## Retention Note
 
+Repair metadata and image buffers are kept in server memory only and may disappear due to restart or eviction limits.

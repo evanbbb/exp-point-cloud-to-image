@@ -1,78 +1,58 @@
 # Folder Structure
 
-This document reflects the current code path in `apps/viewer` + `apps/server`.
+This document reflects the current local-first architecture.
 
 ## Repository top level
 
-- `apps/viewer/`: browser Viewer app (Part A: image -> scene generation -> capture).
-- `apps/repair/`: browser Repair page (currently informational UI only).
-- `apps/server/`: local Express server and API routes.
-- `shared/schemas/`: shared Zod schemas for API payloads and metadata.
-- `shots/`: persistent session data written by client and server.
-- `docs/structure/`: architecture and flow docs.
+- `apps/workspace/`: workspace setup UI.
+- `apps/viewer/`: Part A viewer and generation/capture workflow.
+- `apps/repair/`: Part B repair workflow.
+- `apps/settings/`: API key settings UI.
+- `apps/shared/`: browser-shared modules (for example working-folder handle helpers).
+- `apps/server/`: local Express server.
+- `shared/schemas/`: shared Zod schemas.
+- `docs/structure/`: structure documentation.
 
-## Session root layout in `shots/`
+## Working folder model
 
-A session root is determined by `sessionBaseRelativePath()` in `apps/server/src/lib/paths.ts`:
+There is no default server storage root.
+The user-selected working folder is the only persistent session storage for viewer/repair artifacts.
 
-- **With bucket** (typical): `shots/<session_bucket>/` — the bucket name is the root. No `SESSION_*` nesting.
-- **Without bucket** (bare): `shots/SESSION_YYYYMMDD_HHMMSS/`
-
-The bucket name comes from the directory the user picks in the browser. If the picked directory name matches `SESSION_YYYYMMDD_HHMMSS`, it's treated as no-bucket (bare). Otherwise, the directory name becomes the bucket (e.g. `Feb19`, `Feb20`).
-
-Within each session root:
+## Working folder layout
 
 ```text
-<session_root>/
-  istanbul3d_session.json      (written by browser via File System Access API)
+<working-folder>/
+  istanbul3d_session.json
   source/
     src_0001/
-      <reference-image-filename>.png|jpg|...
+      <reference-image-filename>
       captures/
         cap_0001/
           target.png
           camera.json
           delta_pose.json
-      scene/
-        manifest.json
-        <reference-image-stem>.ply
     src_0002/
       ...
-  generation/
-    jobs/
-      gen_<id>.json
-  repairs/
-    repair_<id>/
-      output/
-        repaired.png           (success path)
-        repair_meta.json       (success and failure paths)
 ```
 
-### Path construction
+## Ownership and writes
 
-All server-side paths flow through `sessionBaseRelativePath(sessionId, sessionBucket)`:
-- Returns `sessionBucket` when present (flat layout)
-- Returns `sessionId` when no bucket (bare layout)
-
-Client-side (repair-app) image URLs use the same logic: `const base = sessionData.session_bucket || repair.session_id`.
-
-## Ownership and write paths
-
-- Viewer local writes (File System Access API):
+- Browser writes to working folder:
   - `istanbul3d_session.json`
-  - `source/src_####/<reference>`
-  - `source/src_####/captures/cap_####/{target.png,camera.json,delta_pose.json}`
-- Viewer server sync writes:
-  - `/api/generate/sync-reference` writes the reference into `shots/.../source/src_####/`
-  - `/api/capture/sync` writes capture files into `shots/.../source/src_####/captures/cap_####/`
-- Generation server writes:
-  - scene assets under `source/src_####/scene/`
-  - job state JSON under `generation/jobs/`
-- Repair server writes:
-  - `repairs/repair_<id>/output/repaired.png` on success
-  - `repairs/repair_<id>/output/repair_meta.json` on both success and failure
+  - source images
+  - capture files (`target.png`, `camera.json`, `delta_pose.json`)
+- Server does not write generation/repair artifacts to the working folder.
+- Server generation and repair runtime artifacts are in-memory and temporary.
+- Server settings persist to repo-root `settings.json`.
 
-## Notes
+Retention note:
 
-- Current implementation stores source images in per-source folders (`src_####`), not directly under `source/`.
-- Repair input copies (`repairs/.../input`) are described in legacy docs, but are not currently written by server routes.
+- In-memory server artifacts are ephemeral:
+  - lost on server restart
+  - subject to TTL/count eviction during runtime
+- Long-term history should be read from local working-folder files (session/source/capture), not server in-memory APIs.
+
+## Important git note
+
+If the chosen working folder is inside a git repository, new files in that folder will appear in `git status`.
+To keep session artifacts out of a repo, choose a working folder outside the repository tree.

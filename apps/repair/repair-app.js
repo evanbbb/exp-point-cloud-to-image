@@ -1,7 +1,10 @@
+import {
+  browserSupportsWorkingFolder,
+  ensureWorkingFolderPermission,
+  loadWorkingFolderHandle
+} from '/shared/workspace-handle.js';
+
 const SESSION_FILE = 'istanbul3d_session.json';
-const WORKING_FOLDER_DB = 'istanbul3d-working-folder';
-const WORKING_FOLDER_STORE = 'state';
-const WORKING_FOLDER_KEY = 'session_dir_handle';
 const WORKSPACE_SETUP_URL = '/workspace?next=/repair';
 
 let sessionDirHandle = null;
@@ -62,44 +65,6 @@ async function readSessionFile(dirHandle) {
     return JSON.parse(await file.text());
   } catch {
     return null;
-  }
-}
-
-function openWorkingFolderDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(WORKING_FOLDER_DB, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(WORKING_FOLDER_STORE)) {
-        db.createObjectStore(WORKING_FOLDER_STORE);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_OPEN_FAILED'));
-  });
-}
-
-async function loadConnectedFolderHandle() {
-  const db = await openWorkingFolderDb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(WORKING_FOLDER_STORE, 'readonly');
-      const store = tx.objectStore(WORKING_FOLDER_STORE);
-      const request = store.get(WORKING_FOLDER_KEY);
-      request.onsuccess = () => resolve(request.result ?? null);
-      request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_READ_FAILED'));
-    });
-  } finally {
-    db.close();
-  }
-}
-
-async function ensureConnectedFolderPermission(dirHandle) {
-  try {
-    if ((await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
-    return (await dirHandle.requestPermission({ mode: 'readwrite' })) === 'granted';
-  } catch {
-    return false;
   }
 }
 
@@ -496,18 +461,18 @@ async function runRepairs() {
 // ── Connected folder bootstrap ─────────────────────────────
 
 async function bootstrapFromConnectedFolder() {
-  if (!window.indexedDB || !window.showDirectoryPicker) {
+  if (!browserSupportsWorkingFolder()) {
     setUIState('pick');
     log('Browser does not support required file APIs.');
     return;
   }
   try {
-    const dirHandle = await loadConnectedFolderHandle();
+    const dirHandle = await loadWorkingFolderHandle();
     if (!dirHandle) {
       window.location.assign(WORKSPACE_SETUP_URL);
       return;
     }
-    const granted = await ensureConnectedFolderPermission(dirHandle);
+    const granted = await ensureWorkingFolderPermission(dirHandle);
     if (!granted) {
       window.location.assign(WORKSPACE_SETUP_URL);
       return;

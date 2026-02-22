@@ -6,29 +6,28 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { generateRequestSchema, type GenerateJob } from "../../../../shared/schemas/generate-job";
 import { config } from "./config";
 import { findCompletedJob, findInFlightJob, loadJob, upsertJob } from "./jobs";
-import { parseSessionBucket, parseSessionId, resolveWithin } from "./paths";
+import { parseSessionBucket, parseSessionId } from "./paths";
 
 const MAX_LOG_TAIL = 200;
+const MAX_PENDING_REFERENCES = 200;
+const PENDING_REFERENCE_TTL_MS = 10 * 60 * 1000;
+const MAX_GENERATION_ASSETS = 200;
+const GENERATION_ASSET_TTL_MS = 60 * 60 * 1000;
 const activeGenerationProcesses = new Map<string, ChildProcess>();
 const cancelRequestedJobs = new Set<string>();
 
 type PendingReference = {
   sessionId: string;
   sessionBucket: string | null;
-  sourceId: string;
   filename: string;
-  mimeType: string;
   buffer: Buffer;
   createdAt: number;
 };
 
 type GenerationAssets = {
-  sessionId: string;
-  sessionBucket: string | null;
-  manifestPath: string;
-  plyPath: string;
   manifestBuffer: Buffer;
   plyBuffer: Buffer;
+  createdAt: number;
 };
 
 const pendingReferences = new Map<string, PendingReference>();
@@ -62,21 +61,42 @@ function safeReferenceFilename(raw: string): string {
   return name || "reference.png";
 }
 
+function prunePendingReferences(): void {
+  const cutoff = Date.now() - PENDING_REFERENCE_TTL_MS;
+  for (const [key, value] of pendingReferences.entries()) {
+    if (value.createdAt < cutoff) pendingReferences.delete(key);
+  }
+  while (pendingReferences.size > MAX_PENDING_REFERENCES) {
+    const oldestKey = pendingReferences.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    pendingReferences.delete(oldestKey);
+  }
+}
+
+function pruneGenerationAssets(): void {
+  const cutoff = Date.now() - GENERATION_ASSET_TTL_MS;
+  for (const [key, value] of generationAssets.entries()) {
+    if (value.createdAt < cutoff) generationAssets.delete(key);
+  }
+  while (generationAssets.size > MAX_GENERATION_ASSETS) {
+    const oldestKey = generationAssets.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    generationAssets.delete(oldestKey);
+  }
+}
+
 export function storeReferenceUpload(input: {
   sessionId: string;
   sessionBucket: string | null;
-  sourceId: string;
   filename: string;
-  mimeType: string;
   buffer: Buffer;
 }): string {
+  prunePendingReferences();
   const refId = `ref_${randomUUID().slice(0, 8)}`;
   pendingReferences.set(refId, {
     sessionId: input.sessionId,
     sessionBucket: input.sessionBucket,
-    sourceId: input.sourceId,
     filename: safeReferenceFilename(input.filename),
-    mimeType: input.mimeType,
     buffer: Buffer.from(input.buffer),
     createdAt: Date.now()
   });
@@ -85,33 +105,27 @@ export function storeReferenceUpload(input: {
 
 async function materializeReference(referenceImagePath: string, sessionId: string, sessionBucket: string | null): Promise<{
   referencePath: string;
-  tempRoot: string | null;
+  tempRoot: string;
 }> {
   const raw = String(referenceImagePath ?? "").trim();
   if (!raw) throw new Error("INVALID_REFERENCE_IMAGE_PATH");
+  if (!raw.startsWith("memory://")) throw new Error("INVALID_REFERENCE_IMAGE_PATH");
 
-  if (raw.startsWith("memory://")) {
-    const refId = raw.slice("memory://".length);
-    const pending = pendingReferences.get(refId);
-    if (!pending) throw new Error("MISSING_REFERENCE_FILE");
-    pendingReferences.delete(refId);
-    if (pending.sessionId !== sessionId || (pending.sessionBucket ?? null) !== (sessionBucket ?? null)) {
-      throw new Error("INVALID_SESSION_PATH");
-    }
-
-    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "istanbul3d-gen-"));
-    const inputDir = path.join(tempRoot, "input");
-    await fs.mkdir(inputDir, { recursive: true });
-    const referencePath = path.join(inputDir, pending.filename);
-    await fs.writeFile(referencePath, pending.buffer);
-    return { referencePath, tempRoot };
+  prunePendingReferences();
+  const refId = raw.slice("memory://".length);
+  const pending = pendingReferences.get(refId);
+  if (!pending) throw new Error("MISSING_REFERENCE_FILE");
+  pendingReferences.delete(refId);
+  if (pending.sessionId !== sessionId || (pending.sessionBucket ?? null) !== (sessionBucket ?? null)) {
+    throw new Error("INVALID_SESSION_PATH");
   }
 
-  const normalized = raw.replace(/^\/+/, "");
-  if (normalized.startsWith("shots/")) {
-    return { referencePath: resolveWithin(config.shotsRoot, normalized.slice("shots/".length)), tempRoot: null };
-  }
-  return { referencePath: resolveWithin(config.repoRoot, normalized), tempRoot: null };
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "istanbul3d-gen-"));
+  const inputDir = path.join(tempRoot, "input");
+  await fs.mkdir(inputDir, { recursive: true });
+  const referencePath = path.join(inputDir, pending.filename);
+  await fs.writeFile(referencePath, pending.buffer);
+  return { referencePath, tempRoot };
 }
 
 async function findGeneratedPly(sceneDir: string, referencePath: string): Promise<string> {
@@ -278,7 +292,7 @@ export async function startGeneration(input: unknown): Promise<{
       const referencePath = materialized.referencePath;
       await fs.access(referencePath);
 
-      const sceneDir = path.join(tempRoot ?? path.dirname(referencePath), "scene");
+      const sceneDir = path.join(tempRoot, "scene");
       await fs.mkdir(sceneDir, { recursive: true });
 
       await runMlSharp(referencePath, sceneDir, jobId, (line) => {
@@ -312,13 +326,11 @@ export async function startGeneration(input: unknown): Promise<{
         )
       );
 
+      pruneGenerationAssets();
       generationAssets.set(jobId, {
-        sessionId,
-        sessionBucket,
-        manifestPath,
-        plyPath,
         manifestBuffer,
-        plyBuffer
+        plyBuffer,
+        createdAt: Date.now()
       });
 
       job = {
@@ -382,6 +394,7 @@ export async function getGenerationAsset(
   jobId: string,
   assetName: string
 ): Promise<{ contentType: string; body: Buffer } | null> {
+  pruneGenerationAssets();
   const assets = generationAssets.get(jobId);
   if (!assets) return null;
 

@@ -16,5 +16,4 @@
 - add Apple Silicon option in the Settings. We then need to build out what that means.
 
 ## Notes
-- Completed offline-first implementation summary: `docs/solutions/offline-phase-completed.md`
-- Resume checklist and exact commands: `docs/solutions/network-resume-and-mlsharp.md`
+- Keep solution docs focused on current V1 architecture and behavior.

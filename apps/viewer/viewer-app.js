@@ -1,11 +1,13 @@
 import { createGenerationController } from './viewer-generation.js';
 import { createSceneController } from './viewer-scene.js';
+import {
+  browserSupportsWorkingFolder,
+  ensureWorkingFolderPermission,
+  loadWorkingFolderHandle
+} from '/shared/workspace-handle.js';
 
 const SESSION_FILE = 'istanbul3d_session.json';
 const lensFov = { '24mm': 84, '35mm': 63, '50mm': 47, '85mm': 28 };
-const WORKING_FOLDER_DB = 'istanbul3d-working-folder';
-const WORKING_FOLDER_STORE = 'state';
-const WORKING_FOLDER_KEY = 'session_dir_handle';
 const WORKSPACE_SETUP_URL = '/workspace?next=/viewer';
 
 let sessionDirHandle = null;
@@ -52,44 +54,6 @@ async function writeSessionFile() {
   const writable = await fh.createWritable();
   await writable.write(JSON.stringify(sessionData, null, 2));
   await writable.close();
-}
-
-function openWorkingFolderDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(WORKING_FOLDER_DB, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(WORKING_FOLDER_STORE)) {
-        db.createObjectStore(WORKING_FOLDER_STORE);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_OPEN_FAILED'));
-  });
-}
-
-async function loadConnectedFolderHandle() {
-  const db = await openWorkingFolderDb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(WORKING_FOLDER_STORE, 'readonly');
-      const store = tx.objectStore(WORKING_FOLDER_STORE);
-      const request = store.get(WORKING_FOLDER_KEY);
-      request.onsuccess = () => resolve(request.result ?? null);
-      request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_READ_FAILED'));
-    });
-  } finally {
-    db.close();
-  }
-}
-
-async function ensureConnectedFolderPermission(dirHandle) {
-  try {
-    if ((await dirHandle.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
-    return (await dirHandle.requestPermission({ mode: 'readwrite' })) === 'granted';
-  } catch {
-    return false;
-  }
 }
 
 // ── Source helpers ─────────────────────────────────────────
@@ -198,18 +162,18 @@ async function migrateLegacySession() {
 // ── Connected folder bootstrap ────────────────────────────
 
 async function bootstrapFromConnectedFolder() {
-  if (!window.indexedDB || !window.showDirectoryPicker) {
+  if (!browserSupportsWorkingFolder()) {
     setUIState('pick');
     log('Browser does not support required file APIs.');
     return;
   }
   try {
-    const dirHandle = await loadConnectedFolderHandle();
+    const dirHandle = await loadWorkingFolderHandle();
     if (!dirHandle) {
       window.location.assign(WORKSPACE_SETUP_URL);
       return;
     }
-    const granted = await ensureConnectedFolderPermission(dirHandle);
+    const granted = await ensureWorkingFolderPermission(dirHandle);
     if (!granted) {
       window.location.assign(WORKSPACE_SETUP_URL);
       return;
@@ -705,37 +669,11 @@ document.getElementById('capture').onclick = async () => {
     await capDir.getFileHandle('camera.json');
     await capDir.getFileHandle('delta_pose.json');
 
-    let syncStatus = { synced: false, finder_opened: false };
-    try {
-      const syncForm = new FormData();
-      syncForm.append('session_id', sessionData.session_id);
-      if (sessionData.session_bucket) syncForm.append('session_bucket', sessionData.session_bucket);
-      syncForm.append('source_id', activeSource.id);
-      syncForm.append('capture_id', capName);
-      syncForm.append('open_finder', '1');
-      syncForm.append('target', targetBlob, 'target.png');
-      syncForm.append('camera', new Blob([cameraJson], { type: 'application/json' }), 'camera.json');
-      syncForm.append('delta', new Blob([deltaJson], { type: 'application/json' }), 'delta_pose.json');
-      const syncRes = await fetch('/api/capture/sync', { method: 'POST', body: syncForm });
-      const syncData = await readJsonResponse(syncRes, 'Capture sync');
-      syncStatus = {
-        synced: true,
-        finder_opened: Boolean(syncData?.finder_opened)
-      };
-    } catch (syncErr) {
-      syncStatus = {
-        synced: false,
-        finder_opened: false,
-        error: String(syncErr)
-      };
-    }
-
     log({
       message: 'Capture exported',
       local_path: `source/${activeSource.id}/captures/${capName}/`,
       files: ['target.png', 'camera.json', 'delta_pose.json'],
-      local_saved: true,
-      sync: syncStatus
+      local_saved: true
     });
   } catch (err) {
     log({ error: String(err) });

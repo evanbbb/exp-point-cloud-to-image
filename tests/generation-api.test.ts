@@ -1,32 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { cancelGeneration, getGenerationStatus, startGeneration } from "../apps/server/src/lib/generation-service";
+import {
+  cancelGeneration,
+  getGenerationAsset,
+  getGenerationStatus,
+  startGeneration,
+  storeReferenceUpload
+} from "../apps/server/src/lib/generation-service";
 import { upsertJob } from "../apps/server/src/lib/jobs";
 import type { GenerateJob } from "../shared/schemas/generate-job";
 
 const sessionId = "SESSION_20990101_000001";
-const storageRoot = process.cwd();
-const sessionRoot = path.join(storageRoot, sessionId);
 
-function resolveAssetPath(assetPath: string): string {
-  const normalized = String(assetPath).replace(/^\/+/, "");
-  if (normalized.startsWith("shots/")) {
-    return path.join(storageRoot, normalized.slice("shots/".length));
-  }
-  return path.join(storageRoot, normalized);
-}
-
-test.after(async () => {
-  await fs.rm(sessionRoot, { recursive: true, force: true });
-});
-
-async function ensureReference() {
-  const ref = path.join(sessionRoot, "source", "reference.png");
-  await fs.mkdir(path.dirname(ref), { recursive: true });
+function createReferenceUploadPath() {
   const tinyPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0/8AAAAASUVORK5CYII=";
-  await fs.writeFile(ref, Buffer.from(tinyPngBase64, "base64"));
+  return storeReferenceUpload({
+    sessionId,
+    sessionBucket: null,
+    filename: "reference.png",
+    buffer: Buffer.from(tinyPngBase64, "base64")
+  });
 }
 
 async function waitForTerminalStatus(jobId: string, timeoutMs = 180000) {
@@ -42,14 +35,11 @@ async function waitForTerminalStatus(jobId: string, timeoutMs = 180000) {
 }
 
 test("generation service uses real ml-sharp execution path", async () => {
-  await ensureReference();
-  const refDir = path.join(sessionRoot, "source");
-  await fs.rm(path.join(refDir, "scene"), { recursive: true, force: true });
-  await fs.rm(path.join(sessionRoot, "generation"), { recursive: true, force: true });
+  const referenceImagePath = createReferenceUploadPath();
 
   const startRes = await startGeneration({
     session_id: sessionId,
-    reference_image_path: `shots/${sessionId}/source/reference.png`,
+    reference_image_path: referenceImagePath,
     force_regenerate: true
   });
 
@@ -63,13 +53,15 @@ test("generation service uses real ml-sharp execution path", async () => {
 
   if (statusRes.status === "completed") {
     assert.ok(statusRes.scene_manifest_path);
-    const manifestPath = resolveAssetPath(statusRes.scene_manifest_path as string);
-    const manifestRaw = await fs.readFile(manifestPath, "utf8");
-    const manifest = JSON.parse(manifestRaw) as { version: string; ply_path?: string };
+    const manifestAsset = await getGenerationAsset(jobId, "manifest.json");
+    assert.ok(manifestAsset);
+    if (!manifestAsset) throw new Error("Expected manifest asset");
+    const manifest = JSON.parse(manifestAsset.body.toString("utf8")) as { version: string; ply_path?: string };
     assert.equal(manifest.version, "1.0");
-    assert.ok(manifest.ply_path);
-    const plyPath = resolveAssetPath(manifest.ply_path as string);
-    await fs.access(plyPath);
+    assert.equal(manifest.ply_path, `/api/generate/${jobId}/asset/scene.ply`);
+    const plyAsset = await getGenerationAsset(jobId, "scene.ply");
+    assert.ok(plyAsset);
+    assert.ok((plyAsset?.body.byteLength ?? 0) > 0);
     return;
   }
 

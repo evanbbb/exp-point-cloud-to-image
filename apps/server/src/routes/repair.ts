@@ -7,6 +7,7 @@ import { type RepairMeta } from "../../../../shared/schemas/repair-meta";
 import { config } from "../lib/config";
 import { getFalKey } from "../lib/app-settings";
 import { parseSessionBucket, parseSessionId, sessionBaseRelativePath } from "../lib/paths";
+import { makeSessionKey, pruneBoundedSessionStore } from "../lib/session-memory-store";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -18,16 +19,30 @@ const upload = multer({
 type StoredRepair = {
   meta: RepairMeta;
   imageBuffer?: Buffer;
+  storedAt: number;
 };
 
+const MAX_REPAIRS_PER_SESSION = 200;
+const REPAIR_TTL_MS = 24 * 60 * 60 * 1000;
 const repairsBySession = new Map<string, Map<string, StoredRepair>>();
 
-function sessionKey(sessionId: string, sessionBucket: string | null): string {
-  return `${sessionBucket ?? ""}::${sessionId}`;
+function pruneRepairsStore(): void {
+  pruneBoundedSessionStore({
+    store: repairsBySession,
+    maxPerSession: MAX_REPAIRS_PER_SESSION,
+    shouldExpire: (entry, nowMs) => nowMs - entry.storedAt > REPAIR_TTL_MS,
+    sortValue: (entry) => entry.storedAt
+  });
 }
 
-function putRepair(sessionId: string, sessionBucket: string | null, repairId: string, entry: StoredRepair): void {
-  const key = sessionKey(sessionId, sessionBucket);
+function putRepair(
+  sessionId: string,
+  sessionBucket: string | null,
+  repairId: string,
+  entry: { meta: RepairMeta; imageBuffer?: Buffer }
+): void {
+  pruneRepairsStore();
+  const key = makeSessionKey(sessionId, sessionBucket);
   let sessionRepairs = repairsBySession.get(key);
   if (!sessionRepairs) {
     sessionRepairs = new Map<string, StoredRepair>();
@@ -35,12 +50,15 @@ function putRepair(sessionId: string, sessionBucket: string | null, repairId: st
   }
   sessionRepairs.set(repairId, {
     meta: { ...entry.meta },
-    imageBuffer: entry.imageBuffer ? Buffer.from(entry.imageBuffer) : undefined
+    imageBuffer: entry.imageBuffer ? Buffer.from(entry.imageBuffer) : undefined,
+    storedAt: Date.now()
   });
+  pruneRepairsStore();
 }
 
 function listRepairs(sessionId: string, sessionBucket: string | null): RepairMeta[] {
-  const key = sessionKey(sessionId, sessionBucket);
+  pruneRepairsStore();
+  const key = makeSessionKey(sessionId, sessionBucket);
   const entries = repairsBySession.get(key);
   if (!entries) return [];
   const repairs = [...entries.values()].map(entry => ({ ...entry.meta }));
@@ -49,7 +67,8 @@ function listRepairs(sessionId: string, sessionBucket: string | null): RepairMet
 }
 
 function getRepairImage(sessionId: string, sessionBucket: string | null, repairId: string): Buffer | null {
-  const key = sessionKey(sessionId, sessionBucket);
+  pruneRepairsStore();
+  const key = makeSessionKey(sessionId, sessionBucket);
   const entry = repairsBySession.get(key)?.get(repairId);
   if (!entry?.imageBuffer) return null;
   return Buffer.from(entry.imageBuffer);

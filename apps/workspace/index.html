@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/workspace/favicon.png" type="image/png" />
     <title>Istanbul3D Workspace</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -199,10 +200,15 @@
       </div>
     </main>
 
-    <script>
-      const WORKING_FOLDER_DB = 'istanbul3d-working-folder';
-      const WORKING_FOLDER_STORE = 'state';
-      const WORKING_FOLDER_KEY = 'session_dir_handle';
+    <script type="module">
+      import {
+        browserSupportsWorkingFolder,
+        clearWorkingFolderHandle,
+        ensureWorkingFolderPermission,
+        loadWorkingFolderHandle,
+        saveWorkingFolderHandle
+      } from '/shared/workspace-handle.js';
+
       const folderStatus = document.getElementById('folderStatus');
       const pickFolderBtn = document.getElementById('pickFolderBtn');
       const clearFolderBtn = document.getElementById('clearFolderBtn');
@@ -218,74 +224,6 @@
         return null;
       }
 
-      function openDb() {
-        return new Promise((resolve, reject) => {
-          const request = indexedDB.open(WORKING_FOLDER_DB, 1);
-          request.onupgradeneeded = () => {
-            const db = request.result;
-            if (!db.objectStoreNames.contains(WORKING_FOLDER_STORE)) {
-              db.createObjectStore(WORKING_FOLDER_STORE);
-            }
-          };
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_OPEN_FAILED'));
-        });
-      }
-
-      async function loadFolderHandle() {
-        const db = await openDb();
-        try {
-          return await new Promise((resolve, reject) => {
-            const tx = db.transaction(WORKING_FOLDER_STORE, 'readonly');
-            const store = tx.objectStore(WORKING_FOLDER_STORE);
-            const request = store.get(WORKING_FOLDER_KEY);
-            request.onsuccess = () => resolve(request.result ?? null);
-            request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_READ_FAILED'));
-          });
-        } finally {
-          db.close();
-        }
-      }
-
-      async function saveFolderHandle(handle) {
-        const db = await openDb();
-        try {
-          await new Promise((resolve, reject) => {
-            const tx = db.transaction(WORKING_FOLDER_STORE, 'readwrite');
-            const store = tx.objectStore(WORKING_FOLDER_STORE);
-            const request = store.put(handle, WORKING_FOLDER_KEY);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_WRITE_FAILED'));
-          });
-        } finally {
-          db.close();
-        }
-      }
-
-      async function clearFolderHandle() {
-        const db = await openDb();
-        try {
-          await new Promise((resolve, reject) => {
-            const tx = db.transaction(WORKING_FOLDER_STORE, 'readwrite');
-            const store = tx.objectStore(WORKING_FOLDER_STORE);
-            const request = store.delete(WORKING_FOLDER_KEY);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error || new Error('WORKING_FOLDER_DB_DELETE_FAILED'));
-          });
-        } finally {
-          db.close();
-        }
-      }
-
-      async function ensurePermission(handle) {
-        try {
-          if ((await handle.queryPermission({ mode: 'readwrite' })) === 'granted') return true;
-          return (await handle.requestPermission({ mode: 'readwrite' })) === 'granted';
-        } catch {
-          return false;
-        }
-      }
-
       function setContinueEnabled(enabled) {
         openViewerBtn.disabled = !enabled;
         openRepairBtn.disabled = !enabled;
@@ -299,7 +237,7 @@
       }
 
       async function refreshStatus() {
-        if (!window.indexedDB || !window.showDirectoryPicker) {
+        if (!browserSupportsWorkingFolder()) {
           activeHandle = null;
           setContinueEnabled(false);
           setStatus('Browser does not support required file APIs.', 'warn');
@@ -307,14 +245,14 @@
           clearFolderBtn.disabled = true;
           return;
         }
-        const handle = await loadFolderHandle();
+        const handle = await loadWorkingFolderHandle();
         if (!handle) {
           activeHandle = null;
           setContinueEnabled(false);
           setStatus('No folder selected.');
           return;
         }
-        const granted = await ensurePermission(handle);
+        const granted = await ensureWorkingFolderPermission(handle);
         if (!granted) {
           activeHandle = null;
           setContinueEnabled(false);
@@ -330,12 +268,12 @@
         if (!window.showDirectoryPicker) return;
         try {
           const handle = await window.showDirectoryPicker();
-          const granted = await ensurePermission(handle);
+          const granted = await ensureWorkingFolderPermission(handle);
           if (!granted) {
             setStatus('Permission denied. Folder was not saved.', 'warn');
             return;
           }
-          await saveFolderHandle(handle);
+          await saveWorkingFolderHandle(handle);
           await refreshStatus();
           const next = parseNextPath();
           if (next) window.location.assign(next);
@@ -347,7 +285,7 @@
       });
 
       clearFolderBtn.addEventListener('click', async () => {
-        await clearFolderHandle();
+        await clearWorkingFolderHandle();
         await refreshStatus();
       });
 
