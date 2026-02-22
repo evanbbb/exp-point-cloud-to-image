@@ -14,7 +14,7 @@ Current integration for `POST /api/repair`.
 2. Server uploads reference/target bytes to fal staging via `fal.storage.upload(...)`.
 3. Server calls `fal.subscribe(...)` with prompt + image URLs + LoRA params.
 4. Server fetches returned image URL and returns `image/png` to browser.
-5. Browser persists returned repair output and metadata into local working-folder `repairs/` history.
+5. Browser persists returned repair output and metadata to disk in local working-folder `repairs/` history.
 
 ## Prompt Behavior
 

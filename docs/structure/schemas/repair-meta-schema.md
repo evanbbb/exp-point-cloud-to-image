@@ -6,7 +6,7 @@ This document describes the metadata object validated by `shared/schemas/repair-
 
 - Produced by `POST /api/repair` in `apps/server/src/routes/repair.ts`.
 - Optionally fetched immediately after run via `GET /api/repairs/:repairId/meta`.
-- Persisted by the browser to local working folder at:
+- Persisted by the browser to disk in local working folder at:
   - `source/src_####/repairs/repair_<id>/repair_meta.json`
 
 ## Purpose

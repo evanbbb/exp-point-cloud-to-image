@@ -25,7 +25,7 @@ Part A workflow: source image selection, 3D generation, shot framing, and captur
 - Upload reference via `/api/generate/sync-reference`.
 - Start generation via `/api/generate`.
 - Poll `/api/generate/:jobId`.
-- Persist completed generation assets to local working folder:
+- Persist completed generation assets to local working folder on disk:
   - `source/src_####/generations/gen_<jobId>/scene_manifest.json`
   - `source/src_####/generations/gen_<jobId>/scene.ply`
 - Load generated scenes from local files when available.
@@ -44,5 +44,5 @@ Part A workflow: source image selection, 3D generation, shot framing, and captur
 
 ## Data boundaries
 
-- Local persistent data: session/source/capture/generation files in selected working folder.
+- Local persistent on-disk data: session/source/capture/generation files in selected working folder.
 - Server-dependent transient data: generation job state and in-memory generation assets used only until local copy is written.

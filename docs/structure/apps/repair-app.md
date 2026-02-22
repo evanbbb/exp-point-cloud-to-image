@@ -14,7 +14,7 @@ Part B workflow: choose a capture, preview prompt context, run FLUX-based repair
 - Show source thumbnail, capture grid, and selected capture state.
 - Build repair prompt using capture delta pose plus optional notes.
 - Submit repair runs to `POST /api/repair`.
-- Persist repair results to local source folder:
+- Persist repair results to local source folder on disk:
   - `source/src_####/repairs/repair_<id>/repair_meta.json`
   - `source/src_####/repairs/repair_<id>/repaired.png` (success only)
 - Render previous repairs by scanning local `repairs/` folders.
@@ -27,6 +27,7 @@ Part B workflow: choose a capture, preview prompt context, run FLUX-based repair
 - Paid confirmation checkbox.
 - Run count selector (1-4).
 - Previous repairs panel scoped by source/capture.
+- Previous repair export action downloads one ZIP per repair (`<repair_id>_files.zip`) to the browser's download location; ZIP contains `repair_meta.json` and optional `repaired.png`.
 - Lightbox and compare overlay (source vs capture vs repair).
 
 ## Inputs and outputs
@@ -45,5 +46,5 @@ Part B workflow: choose a capture, preview prompt context, run FLUX-based repair
 
 ## Data boundaries
 
-- Local persistent data includes source/capture/repair files in selected working folder.
+- Local persistent on-disk data includes source/capture/repair files in selected working folder.
 - Server in-memory repair metadata remains transient and is not the long-term history source.

@@ -59,6 +59,26 @@ This file is the consolidated history of non-trivial issues resolved during V1 s
   - Avoid reintroducing implicit server default storage roots.
   - Keep docs explicit that server in-memory artifacts are ephemeral.
 
+## 4) Previous Repairs File Access Action Regression
+
+- Date: 2026-02-22
+- Area: `apps/repair/repair-app.js`
+- Symptoms:
+  - Previous Repairs cards no longer had a file-access action.
+  - Users expected a direct folder-open affordance from each repair card.
+- Root causes:
+  - Legacy folder-open behavior depended on server-coupled filesystem routes that were removed during local-first cleanup.
+  - Browser `FileSystemDirectoryHandle` does not provide a portable way to open OS Finder directly from a web app.
+- Fixes:
+  - Restored a per-repair action button in Previous Repairs.
+  - Switched action to explicit save/export semantics with a download icon.
+  - Export now produces one archive per repair: `<repair_id>_files.zip` (browser download location, not workspace write-back).
+  - Archive includes `repair_meta.json` and, when present, `repaired.png`.
+- Prevention:
+  - Keep UI affordances aligned with browser capability limits for local filesystem handles.
+  - When removing server filesystem routes, explicitly replace dependent UI actions with local-first equivalents.
+  - Prefer single-artifact export for repair handoff to avoid multi-download friction.
+
 ## Notes for V1 Operations
 
 - Local-only single-user workflow.

@@ -33,7 +33,7 @@ Current implemented user flow across Workspace, Viewer, Repair, Settings, and th
    - Upload reference via `POST /api/generate/sync-reference`.
    - Start job via `POST /api/generate` using returned `memory://...` reference path.
    - Poll status via `GET /api/generate/:jobId`.
-   - On completion, copy generation artifacts into local source folder:
+   - On completion, copy generation artifacts to disk in local source folder:
      - `source/src_####/generations/gen_<jobId>/scene_manifest.json`
      - `source/src_####/generations/gen_<jobId>/scene.ply`
    - Load output from local generation files.
@@ -54,10 +54,13 @@ Current implemented user flow across Workspace, Viewer, Repair, Settings, and th
    - delta pose JSON
    - camera JSON
    - prompt text
-6. Persist each repair run to local source folder:
+6. Persist each repair run to disk in local source folder:
    - `source/src_####/repairs/repair_<id>/repair_meta.json`
    - `source/src_####/repairs/repair_<id>/repaired.png` (success only)
 7. Previous repairs panel reads history from local `repairs/` folders.
+8. Previous repair export action downloads one ZIP per repair (`<repair_id>_files.zip`) to the browser's download location, containing:
+   - `repair_meta.json`
+   - `repaired.png` when available (successful runs)
 
 ## Settings flow (`/settings`)
 

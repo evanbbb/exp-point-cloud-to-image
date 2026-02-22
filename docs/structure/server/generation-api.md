@@ -6,7 +6,7 @@ Current backend contract for on-demand `ml-sharp` generation.
 
 - Accept a browser-uploaded reference image.
 - Start and track asynchronous generation jobs.
-- Serve generated manifest/PLY assets from in-memory storage.
+- Serve generated manifest/PLY assets from temporary in-memory storage so the browser can persist them to disk.
 
 ## Endpoint: `POST /api/generate/sync-reference`
 
@@ -52,6 +52,7 @@ Starts a generation job.
 - `reference_image_path` must be a `memory://` token returned by `sync-reference`.
 - Job state is stored in memory.
 - Reuses existing queued/running/completed jobs when `force_regenerate` is false.
+- Viewer persists completed generation outputs to disk under `source/src_####/generations/gen_<jobId>/` in the selected working folder.
 
 ### Retention semantics
 
@@ -108,6 +109,7 @@ Cancels a queued/running job.
 ## Endpoint: `GET /api/generate/:jobId/asset/:assetName`
 
 Serves in-memory generation assets for completed jobs.
+These asset endpoints are transient transport paths, not durable storage.
 
 Supported `assetName` values:
 
@@ -136,4 +138,4 @@ Manifest includes:
 
 - Poll `GET /api/generate/:jobId` every 1 second while status is `queued` or `running`.
 - Stop polling when status is `completed` or `failed`.
-- On completion, load `scene_manifest_path` then `ply_path` from manifest.
+- On completion, load `scene_manifest_path` then `ply_path` from manifest, then persist both files to disk in the selected working folder.

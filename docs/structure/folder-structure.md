@@ -45,14 +45,14 @@ The user-selected working folder is the only persistent session storage for view
 
 ## Ownership and writes
 
-- Browser writes to working folder:
+- Generation and repair artifacts are written to disk in the selected working folder (via browser):
   - `istanbul3d_session.json`
   - source images
   - capture files (`target.png`, `camera.json`, `delta_pose.json`)
   - generation output files (`scene_manifest.json`, `scene.ply`)
   - repair files (`repair_meta.json`, `repaired.png`)
 - Server does not write generation/repair artifacts to the working folder.
-- Server generation and repair runtime artifacts are in-memory and temporary.
+- Server generation and repair runtime artifacts are in-memory and temporary transport/state only.
 - Server settings persist to repo-root `settings.json`.
 
 Retention note:

@@ -37,7 +37,7 @@ Single local Express server (default `http://localhost:8787`).
 Persistence behavior:
 
 - Persisted: `settings.json` (repo root).
-- Persisted by browser in selected working folder (not by server):
+- Persisted on disk by browser in selected working folder (not by server):
   - generation artifacts (`source/src_####/generations/...`)
   - repair artifacts (`source/src_####/repairs/...`)
 - In-memory only:
@@ -45,6 +45,11 @@ Persistence behavior:
   - generation manifest/PLY assets
   - uploaded generation references
   - repair list and repair image payloads
+
+Durability note:
+
+- Generation and repair history is durable in the selected working folder across server restarts.
+- Server in-memory copies are transient runtime state only.
 
 Retention/eviction behavior:
 
