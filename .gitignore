@@ -57,3 +57,6 @@ assets/models/*.pt
 *.flv
 *.mov
 *.wmv
+
+# Do not share loose permissions with users
+.claude
