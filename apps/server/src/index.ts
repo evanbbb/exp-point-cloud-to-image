@@ -1,6 +1,6 @@
 import express from "express";
 import path from "node:path";
-import { config, validateMlSharpRuntimeOrThrow } from "./lib/config";
+import { config, getMlSharpRuntimeIssues } from "./lib/config";
 import { generateRouter } from "./routes/generate";
 import { repairRouter } from "./routes/repair";
 import { settingsRouter } from "./routes/settings";
@@ -14,7 +14,13 @@ export function createApp() {
   });
 
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, generation_mode: "real" });
+    const runtimeIssues = getMlSharpRuntimeIssues();
+    res.json({
+      ok: true,
+      generation_mode: "real",
+      ml_sharp_ready: runtimeIssues.length === 0,
+      ml_sharp_issues: runtimeIssues
+    });
   });
 
   app.get("/favicon.ico", (_req, res) => {
@@ -35,7 +41,13 @@ export function createApp() {
 }
 
 if (require.main === module) {
-  validateMlSharpRuntimeOrThrow();
+  const runtimeIssues = getMlSharpRuntimeIssues();
+  if (runtimeIssues.length > 0) {
+    console.warn("ml-sharp runtime is not ready. Generation endpoints will fail until setup is complete.");
+    for (const issue of runtimeIssues) {
+      console.warn(`- ${issue}`);
+    }
+  }
   const app = createApp();
   app.listen(config.port, () => {
     console.log(`Server listening on http://localhost:${config.port}`);

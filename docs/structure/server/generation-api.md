@@ -130,6 +130,7 @@ Manifest includes:
 
 ## Timeouts and common errors
 
+- Runtime not prepared: `ML_SHARP_RUNTIME_NOT_READY` (HTTP 503 from `POST /api/generate`)
 - Timeout: `ML_SHARP_TIMEOUT`
 - Execution failure: `ML_SHARP_EXEC_FAILED`
 - Cancelled: `JOB_CANCELLED`

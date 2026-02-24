@@ -1,0 +1,5 @@
+# Python dependencies for Istanbul3D generation backend.
+# Assumes `vendor/ml-sharp` exists (created by `npm run bootstrap:ml-sharp`).
+
+-r vendor/ml-sharp/requirements.txt
+-e ./vendor/ml-sharp

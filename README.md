@@ -18,9 +18,37 @@ Source | Capture | Repair comparison:
 
 ## Quick Start
 
-Ask your AI to look at PROJECT.md
+Prerequisites:
+
+- Node.js 20+
+- npm 10+
+- Python 3.11+ (for ml-sharp generation backend)
+- `git` and `curl`
+- Chromium-based browser (Chrome, Edge, Arc) for File System Access API support
+
+From a clean clone:
+
+```bash
+npm install
+cp .env.example .env
+npm run bootstrap:ml-sharp
+npm run dev
+```
 
 Open: `http://localhost:8787`
+
+What bootstrap does:
+
+- Clones `apple/ml-sharp` into `vendor/ml-sharp` (if missing)
+- Creates `.venv-mlsharp-311`
+- Installs Python dependencies from root `requirements.txt` (including ml-sharp)
+- Downloads `assets/models/sharp_2572gikvuh.pt`
+
+Notes:
+
+- `/repair` requires `FAL_KEY` (set in `.env` or in the `/settings` page).
+- If ml-sharp runtime is not prepared yet, the app still starts, but generation APIs return `ML_SHARP_RUNTIME_NOT_READY`.
+- If your browser does not support `showDirectoryPicker`, `/workspace` cannot connect to a local folder.
 
 ## Storage Model
 

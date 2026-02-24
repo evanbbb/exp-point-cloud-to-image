@@ -10,9 +10,10 @@ Dependency source-of-truth locations for this project.
 
 ## Python / ml-sharp dependencies
 
-- Pinned Python dependencies: `vendor/ml-sharp/requirements.txt`
-- Input spec for lock generation: `vendor/ml-sharp/requirements.in`
-- `ml-sharp` upstream: `https://github.com/apple/ml-sharp`
+- Root install entrypoint: `requirements.txt`
+- Bootstrap script: `scripts/bootstrap-ml-sharp.sh`
+- Upstream source cloned by bootstrap: `vendor/ml-sharp` from `https://github.com/apple/ml-sharp`
+- Installed Python dependencies source: `vendor/ml-sharp/requirements.txt` (available after bootstrap)
 
 ## Runtime environment dependencies
 
@@ -20,6 +21,7 @@ Dependency source-of-truth locations for this project.
 - `ML_SHARP_DEVICE`: compute device for `ml-sharp` (current default is `cpu`).
 - `ML_SHARP_CHECKPOINT`: optional override for model checkpoint path.
 - `FAL_KEY`: fal.ai API key (also configurable via `settings.json` through `/settings` UI/API).
+- `.env.example`: template env file for clean clones.
 
 ## Platform-specific notes
 

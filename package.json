@@ -4,7 +4,9 @@
   "description": "Local-first viewer + repair workflow for SHARP + FLUX",
   "type": "commonjs",
   "scripts": {
-    "dev": "tsx --env-file=.env apps/server/src/index.ts",
+    "dev": "tsx apps/server/src/index.ts",
+    "dev:env": "tsx --env-file=.env apps/server/src/index.ts",
+    "bootstrap:ml-sharp": "bash scripts/bootstrap-ml-sharp.sh",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/apps/server/src/index.js",
     "test": "npm run build && node --test dist/tests/**/*.test.js",

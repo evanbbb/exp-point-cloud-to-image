@@ -78,6 +78,10 @@ generateRouter.post("/api/generate", async (req, res) => {
     if (invalidSession) {
       return res.status(400).json({ error: invalidSession });
     }
+    if (error instanceof Error && error.message.startsWith("ML_SHARP_RUNTIME_NOT_READY")) {
+      const detail = error.message.replace("ML_SHARP_RUNTIME_NOT_READY:", "").trim();
+      return res.status(503).json({ error: "ML_SHARP_RUNTIME_NOT_READY", detail });
+    }
     if (error instanceof Error && "issues" in error) {
       return res.status(400).json({ error: "INVALID_REQUEST", detail: error.message });
     }

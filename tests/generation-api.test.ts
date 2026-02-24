@@ -7,6 +7,7 @@ import {
   startGeneration,
   storeReferenceUpload
 } from "../apps/server/src/lib/generation-service";
+import { getMlSharpRuntimeIssues } from "../apps/server/src/lib/config";
 import { upsertJob } from "../apps/server/src/lib/jobs";
 import type { GenerateJob } from "../shared/schemas/generate-job";
 
@@ -34,7 +35,13 @@ async function waitForTerminalStatus(jobId: string, timeoutMs = 180000) {
   throw new Error(`Timed out waiting for terminal generation status for ${jobId}`);
 }
 
-test("generation service uses real ml-sharp execution path", async () => {
+test("generation service uses real ml-sharp execution path", async (t) => {
+  const runtimeIssues = getMlSharpRuntimeIssues();
+  if (runtimeIssues.length > 0) {
+    t.skip(`Skipping generation test: ${runtimeIssues.join("; ")}`);
+    return;
+  }
+
   const referenceImagePath = createReferenceUploadPath();
 
   const startRes = await startGeneration({

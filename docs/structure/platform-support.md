@@ -8,6 +8,7 @@ This document makes runtime assumptions explicit and lists required overrides fo
 - CPU: Intel (non-Apple Silicon)
 - Generation backend: `ml-sharp` via local executable
 - Default server config source: `apps/server/src/lib/config.ts`
+- One-command baseline setup: `npm run bootstrap:ml-sharp`
 
 ## Runtime knobs you may need to override
 

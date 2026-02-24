@@ -17,6 +17,7 @@ Workspace setup gate used before Viewer and Repair.
 
 - Displays folder connection status.
 - `Select Working Folder` opens `showDirectoryPicker()` and requests read/write permission.
+- Requires File System Access API support (Chromium-based browsers like Chrome/Edge/Arc).
 - Saves handle in IndexedDB:
   - DB: `istanbul3d-working-folder`
   - store: `state`

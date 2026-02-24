@@ -6,7 +6,7 @@ Current implemented user flow across Workspace, Viewer, Repair, Settings, and th
 
 1. User opens `/`.
 2. Server redirects to `/workspace`.
-3. User selects a working folder with File System Access API (`showDirectoryPicker`).
+3. User selects a working folder with File System Access API (`showDirectoryPicker`), supported in Chromium-based browsers.
 4. Folder handle is saved in IndexedDB (`istanbul3d-working-folder`, key `session_dir_handle`).
 5. User opens `/viewer` or `/repair`.
 6. Viewer/Repair load the saved handle and request read/write permission.

@@ -59,6 +59,10 @@ Retention/eviction behavior:
 - Generation jobs: capped at 200 entries per session; terminal jobs expire after 6 hours.
 - Repair history/images: capped at 200 entries per session; entries expire after 24 hours.
 
+Health endpoint note:
+
+- `GET /api/health` reports `ml_sharp_ready` and `ml_sharp_issues` so clean clones can diagnose missing generation runtime dependencies.
+
 ## Security and deployment assumptions
 
 - Localhost development tool, no auth layer.

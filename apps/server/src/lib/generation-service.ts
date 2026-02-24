@@ -4,7 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import { generateRequestSchema, type GenerateJob } from "../../../../shared/schemas/generate-job";
-import { config } from "./config";
+import { config, getMlSharpRuntimeIssues } from "./config";
 import { findCompletedJob, findInFlightJob, loadJob, upsertJob } from "./jobs";
 import { parseSessionBucket, parseSessionId } from "./paths";
 
@@ -255,6 +255,10 @@ export async function startGeneration(input: unknown): Promise<{
   created_at: string;
 }> {
   const body = generateRequestSchema.parse(input ?? {});
+  const runtimeIssues = getMlSharpRuntimeIssues();
+  if (runtimeIssues.length > 0) {
+    throw new Error(`ML_SHARP_RUNTIME_NOT_READY: ${runtimeIssues.join("; ")}`);
+  }
   const sessionId = parseSessionId(body.session_id);
   const sessionBucket = parseSessionBucket(body.session_bucket ?? "");
 

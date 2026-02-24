@@ -14,16 +14,27 @@ export const config = {
   mlSharpTimeoutMs: 15 * 60 * 1000
 };
 
-export function validateMlSharpRuntimeOrThrow(): void {
+export function getMlSharpRuntimeIssues(): string[] {
+  const issues: string[] = [];
+
   try {
     fs.accessSync(config.mlSharpBin, fs.constants.X_OK);
   } catch {
-    throw new Error(`ML_SHARP_BIN_NOT_EXECUTABLE: ${config.mlSharpBin}`);
+    issues.push(`ML_SHARP_BIN_NOT_EXECUTABLE: ${config.mlSharpBin}`);
   }
 
   try {
     fs.accessSync(config.mlSharpCheckpointPath, fs.constants.R_OK);
   } catch {
-    throw new Error(`ML_SHARP_CHECKPOINT_NOT_READABLE: ${config.mlSharpCheckpointPath}`);
+    issues.push(`ML_SHARP_CHECKPOINT_NOT_READABLE: ${config.mlSharpCheckpointPath}`);
+  }
+
+  return issues;
+}
+
+export function validateMlSharpRuntimeOrThrow(): void {
+  const issues = getMlSharpRuntimeIssues();
+  if (issues.length > 0) {
+    throw new Error(issues[0]);
   }
 }

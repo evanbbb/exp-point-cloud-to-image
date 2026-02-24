@@ -44,6 +44,12 @@ Thumbs.db
 .env
 .env.local
 settings.json
+.venv/
+.venv-*/
+
+# Generated ml-sharp bootstrap artifacts
+vendor/ml-sharp/
+assets/models/*.pt
 
 # Large media files
 *.mp4
@@ -52,4 +58,3 @@ settings.json
 *.flv
 *.mov
 *.wmv
-
