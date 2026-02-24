@@ -48,7 +48,6 @@ settings.json
 .venv-*/
 
 # Generated ml-sharp bootstrap artifacts
-vendor/ml-sharp/
 assets/models/*.pt
 
 # Large media files
