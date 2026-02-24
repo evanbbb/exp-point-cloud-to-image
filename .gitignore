@@ -59,4 +59,7 @@ assets/models/*.pt
 *.wmv
 
 # Do not share loose permissions with users
-.claude
+.claude/*
+
+# Do not include caches of pip packages
+.cache/*
