@@ -22,27 +22,33 @@ Prerequisites:
 
 - Node.js 20+
 - npm 10+
-- Python 3.11+ (for ml-sharp generation backend)
-- `git` and `curl`
+- Anaconda3
+- Python 3.13 (for ml-sharp generation backend)
 - Chromium-based browser (Chrome, Edge, Arc) for File System Access API support
 
 From a clean clone:
 
+
 ```bash
+git submodule update --init --recursive
+cd vendor/ml-sharp
+```
+Then follow the instructions in [ml-sharp's README](https://github.com/apple/ml-sharp) to prepare the runtime.
+```bash
+conda create -n sharp python=3.13
+pip install -r requirements.txt
+sharp --help
+```
+At this point, you should see the help screen for ml-sharp. Then go back up to the root and run the web app. The npm install will install dependencies and automatically download the ml-sharp checkpoint to assets/models.
+
+```bash
+cd ../..
 npm install
 cp .env.example .env
-npm run bootstrap:ml-sharp
 npm run dev
 ```
 
 Open: `http://localhost:8787`
-
-What bootstrap does:
-
-- Clones `apple/ml-sharp` into `vendor/ml-sharp` (if missing)
-- Creates `.venv-mlsharp-311`
-- Installs Python dependencies from root `requirements.txt` (including ml-sharp)
-- Downloads `assets/models/sharp_2572gikvuh.pt`
 
 Notes:
 
@@ -64,9 +70,6 @@ See:
 ## Platform Notes
 
 Current validated baseline: macOS Intel (non-Apple Silicon).
-
-For Apple Silicon + Windows guidance:
-- `docs/structure/platform-support.md`
 
 ## References
 
