@@ -48,7 +48,6 @@ settings.json
 .venv-*/
 
 # Generated ml-sharp bootstrap artifacts
-vendor/ml-sharp/
 assets/models/*.pt
 
 # Large media files
@@ -58,3 +57,9 @@ assets/models/*.pt
 *.flv
 *.mov
 *.wmv
+
+# Do not share loose permissions with users
+.claude/*
+
+# Do not include caches of pip packages
+.cache/*
